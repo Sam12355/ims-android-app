@@ -1,0 +1,135 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Android App",
+			"type": "shell",
+			"command": "./gradlew",
+			"args": [
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$gradle"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build Debug APK",
+			"type": "shell",
+			"command": "./gradlew",
+			"args": [
+				"assembleDebug",
+				"--stacktrace"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [
+				"$gradle"
+			],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Uninstall App",
+			"type": "shell",
+			"command": "adb",
+			"args": [
+				"uninstall",
+				"com.stocknexus.android"
+			],
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "silent"
+			}
+		},
+		{
+			"label": "Install Debug APK",
+			"type": "shell",
+			"command": "adb",
+			"args": [
+				"install",
+				"-r",
+				"--streaming",
+				"${workspaceFolder}/app/build/outputs/apk/debug/app-debug.apk"
+			],
+			"problemMatcher": [],
+			"dependsOn": ["Build Debug APK"]
+		},
+		{
+			"label": "Clean Install Debug APK",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"Uninstall App",
+				"Install Debug APK"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "View Logcat (Errors Only)",
+			"type": "shell",
+			"command": "adb",
+			"args": [
+				"logcat",
+				"-v",
+				"time",
+				"AndroidRuntime:E",
+				"StockNexus:V",
+				"System.err:V",
+				"*:S"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			}
+		},
+		{
+			"label": "View Logcat (All App Logs)",
+			"type": "shell",
+			"command": "adb",
+			"args": [
+				"logcat",
+				"-v",
+				"time",
+				"StockNexus:V",
+				"AndroidRuntime:E",
+				"*:S"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated",
+				"clear": true
+			}
+		},
+		{
+			"label": "Clear Logcat",
+			"type": "shell",
+			"command": "adb",
+			"args": [
+				"logcat",
+				"-c"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "Build, Install & Launch with Logs",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"Build Debug APK",
+				"Clear Logcat",
+				"Clean Install Debug APK",
+				"View Logcat (All App Logs)"
+			],
+			"problemMatcher": []
+		}
+	]
+}

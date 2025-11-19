@@ -1,0 +1,2095 @@
+package com.stocknexus.data.api
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.stocknexus.data.model.*
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.annotations.SupabaseInternal
+import io.ktor.client.engine.android.Android
+import io.ktor.client.plugins.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+// DataStore extension
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "auth_prefs")
+
+/**
+ * API Client for backend communication
+ * Connects to: https://stock-nexus-84-main-2-1.onrender.com/api
+ */
+@OptIn(SupabaseInternal::class)
+class ApiClient private constructor(private val context: Context) {
+    
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)  // Increased for Render cold start
+        .readTimeout(60, TimeUnit.SECONDS)     // Increased for Render cold start
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
+    
+    private val baseUrl = "https://stock-nexus-84-main-2-1.onrender.com/api"
+    private val supabaseUrl = "https://gvlaokxdgcnttyovdhku.supabase.co"
+    private val serviceRoleKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd2bGFva3hkZ2NudHR5b3ZkaGt1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTEwMzA3MSwiZXhwIjoyMDc0Njc5MDcxfQ.yajgETQGHAFy5cJk_Om9SYxyy61r0MvT5TP93aqHZmA"
+    
+    // Supabase client for direct database access (using service_role key for privileged operations)
+    private val supabase = createSupabaseClient(
+        supabaseUrl = supabaseUrl,
+        supabaseKey = serviceRoleKey
+    ) {
+        install(Postgrest)
+        httpEngine = Android.create()
+    }
+    
+    @Serializable
+    data class LoginRequest(val email: String, val password: String)
+    
+    @Serializable
+    data class LoginResponse(
+        val success: Boolean,
+        val data: LoginData
+    )
+    
+    @Serializable
+    data class LoginData(
+        val user: UserData,
+        val token: String
+    )
+    
+    @Serializable
+    data class UserData(
+        val id: String,
+        val email: String,
+        val name: String,
+        val role: String,
+        val branch_id: String? = null,
+        val branch_name: String? = null,
+        val created_at: String? = null,
+        val updated_at: String? = null
+    )
+    
+    @Serializable
+    data class ICAEntry(
+        val type: String,
+        val amount: String,
+        val timeOfDay: String
+    )
+    
+    @Serializable
+    data class ICADeliveryRequest(
+        val userName: String,
+        val entries: List<ICAEntry>,
+        val submittedAt: String
+    )
+
+    @Serializable
+    private data class NotificationUpdate(
+        @SerialName("notification_settings")
+        val notificationSettings: JsonObject
+    )
+    
+    companion object {
+        private const val TAG = "ApiClient"
+        @Volatile
+        private var INSTANCE: ApiClient? = null
+        
+        fun getInstance(context: Context): ApiClient {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: ApiClient(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+        
+        // DataStore keys
+        private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
+        private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
+        private val USER_DATA_KEY = stringPreferencesKey("user_data")
+        private val PROFILE_DATA_KEY = stringPreferencesKey("profile_data")
+    }
+    
+    // Demo authentication methods
+    suspend fun login(email: String, password: String): Result<AuthResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            android.util.Log.d(TAG, "Calling backend API login for: $email")
+            
+            // Call the backend API (same as web app)
+            val requestBody = json.encodeToString(LoginRequest.serializer(), LoginRequest(email, password))
+            val request = Request.Builder()
+                .url("$baseUrl/auth/login")
+                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            android.util.Log.d(TAG, "Backend response code: ${response.code}")
+            android.util.Log.d(TAG, "Backend response body: $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Login failed: ${response.code} - $responseBody")
+            }
+            
+            val loginResponse = json.decodeFromString<LoginResponse>(responseBody)
+            
+            if (!loginResponse.success) {
+                throw Exception("Login failed")
+            }
+            
+            val userData = loginResponse.data.user
+            
+            // Create user object from backend response
+            val user = User(
+                id = userData.id,
+                email = userData.email,
+                name = userData.name,
+                role = userData.role,
+                createdAt = userData.created_at ?: System.currentTimeMillis().toString(),
+                updatedAt = userData.updated_at ?: System.currentTimeMillis().toString()
+            )
+            
+            val profile = Profile(
+                id = userData.id,
+                userId = userData.id,
+                name = userData.name,
+                email = userData.email,
+                role = userData.role,
+                branchId = userData.branch_id ?: "",
+                branchName = userData.branch_name ?: "",
+                createdAt = userData.created_at ?: System.currentTimeMillis().toString(),
+                updatedAt = userData.updated_at ?: System.currentTimeMillis().toString()
+            )
+            
+            val authResponse = AuthResponse(
+                user = user,
+                profile = profile,
+                accessToken = loginResponse.data.token,
+                refreshToken = null
+            )
+            
+            // Save mock data
+            saveAuthData(authResponse)
+            
+            Result.success(authResponse)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Login exception: ${e.message}")
+            android.util.Log.e(TAG, "Exception type: ${e.javaClass.simpleName}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun signup(request: SignUpRequest): Result<AuthResponse> {
+        return login(request.email, request.password) // Use same mock logic for demo
+    }
+    
+    suspend fun logout() {
+        clearAuthData()
+    }
+    
+    // Authentication helper methods
+    private suspend fun saveAuthData(authResponse: AuthResponse) {
+        context.dataStore.edit { preferences ->
+            preferences[ACCESS_TOKEN_KEY] = authResponse.accessToken
+            authResponse.refreshToken?.let { 
+                preferences[REFRESH_TOKEN_KEY] = it 
+            }
+            preferences[USER_DATA_KEY] = json.encodeToString(User.serializer(), authResponse.user)
+            preferences[PROFILE_DATA_KEY] = json.encodeToString(Profile.serializer(), authResponse.profile)
+        }
+    }
+    
+    private suspend fun clearAuthData() {
+        context.dataStore.edit { preferences ->
+            preferences.clear()
+        }
+    }
+    
+    // Enhanced Authentication Methods for new auth system
+    suspend fun signIn(request: SignInRequest): AuthResponse {
+        // Use existing login logic but return enhanced response
+        android.util.Log.d("ApiClient", "signIn called for: ${request.email}")
+        val result = login(request.email, request.password)
+        android.util.Log.d("ApiClient", "login result isSuccess: ${result.isSuccess}")
+        if (result.isSuccess) {
+            val authResponse = result.getOrThrow()
+            android.util.Log.d("ApiClient", "Creating enhanced AuthResponse")
+            return com.stocknexus.data.model.AuthResponse(
+                user = com.stocknexus.data.model.User(
+                    id = authResponse.user.id,
+                    email = authResponse.user.email,
+                    name = authResponse.profile.name,
+                    role = authResponse.profile.role,
+                    branchId = authResponse.profile.branchId,
+                    branchName = authResponse.profile.branchName,
+                    createdAt = authResponse.user.createdAt,
+                    emailVerified = true,
+                    isActive = true
+                ),
+                profile = authResponse.profile,
+                accessToken = authResponse.accessToken,
+                refreshToken = authResponse.refreshToken
+            )
+        } else {
+            val error = result.exceptionOrNull() ?: Exception("Login failed")
+            android.util.Log.e("ApiClient", "login failed: ${error.message}")
+            throw error
+        }
+    }
+    
+    suspend fun signUp(request: SignUpRequest): AuthResponse {
+        // Use existing signup logic but return enhanced response
+        val signupRequest = SignUpRequest(
+            email = request.email,
+            password = request.password,
+            name = request.name,
+            role = request.role,
+            branchId = request.branchId
+        )
+        
+        val result = signup(signupRequest)
+        if (result.isSuccess) {
+            val authResponse = result.getOrThrow()
+            return com.stocknexus.data.model.AuthResponse(
+                user = com.stocknexus.data.model.User(
+                    id = authResponse.user.id,
+                    email = authResponse.user.email,
+                    name = request.name,
+                    role = request.role,
+                    branchId = request.branchId,
+                    createdAt = authResponse.user.createdAt,
+                    emailVerified = false, // New users need verification
+                    isActive = true
+                ),
+                profile = authResponse.profile,
+                accessToken = authResponse.accessToken,
+                refreshToken = authResponse.refreshToken
+            )
+        } else {
+            throw result.exceptionOrNull() ?: Exception("Signup failed")
+        }
+    }
+    
+    suspend fun signOut() {
+        logout()
+    }
+    
+    suspend fun forgotPassword(request: PasswordResetRequest) {
+        // Simulate delay for demo
+        kotlinx.coroutines.delay(1000)
+        
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(request.email).matches()) {
+            throw Exception("Invalid email format")
+        }
+        
+        // In real implementation, this would send an email
+        // For demo, we just simulate success
+    }
+    
+    suspend fun resetPassword(request: PasswordResetConfirm) {
+        kotlinx.coroutines.delay(1000)
+        
+        if (request.newPassword.length < 6) {
+            throw Exception("Password must be at least 6 characters long")
+        }
+        
+        // Simulate password reset success
+    }
+    
+    suspend fun requestEmailVerification(request: EmailVerificationRequest) {
+        kotlinx.coroutines.delay(1000)
+        
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(request.email).matches()) {
+            throw Exception("Invalid email format")
+        }
+        
+        // Simulate sending verification email
+    }
+    
+    suspend fun verifyEmail(request: EmailVerificationConfirm): com.stocknexus.data.model.User {
+        kotlinx.coroutines.delay(1000)
+        
+        if (request.verificationCode.length != 6) {
+            throw Exception("Invalid verification code")
+        }
+        
+        // Return updated user with verified email
+        return com.stocknexus.data.model.User(
+            id = "demo-user-id",
+            email = request.email,
+            name = "Demo User",
+            role = "staff",
+            createdAt = "2024-01-01T00:00:00Z",
+            emailVerified = true,
+            isActive = true
+        )
+    }
+    
+    suspend fun resendVerificationCode(request: ResendVerificationRequest) {
+        kotlinx.coroutines.delay(1000)
+        // Simulate resending verification code
+    }
+    
+    suspend fun updateProfile(updates: Map<String, Any?>): Profile = withContext(Dispatchers.IO) {
+        val token = getAccessToken() ?: throw Exception("Not authenticated")
+        android.util.Log.d(TAG, "📸 updateProfile called with: $updates")
+        
+        try {
+            val payloadElement = mapToJsonElement(updates)
+            val payloadObject = (payloadElement as? JsonObject) ?: JsonObject(emptyMap())
+            val requestBody = json.encodeToString(JsonObject.serializer(), payloadObject)
+                .toRequestBody("application/json".toMediaType())
+            
+            android.util.Log.d(TAG, "📸 updateProfile request body: $requestBody")
+
+            val request = Request.Builder()
+                .url("$baseUrl/users/profile")
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .put(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            android.util.Log.d(TAG, "📸 updateProfile response: ${response.code} - $responseBody")
+
+            if (response.isSuccessful) {
+                android.util.Log.d(TAG, "📸 ✅ Backend update successful, fetching updated profile...")
+                val updatedProfile = getProfile()
+                android.util.Log.d(TAG, "📸 ✅ Profile refreshed with photo_url: ${updatedProfile.photoUrl}")
+                return@withContext updatedProfile
+            }
+            
+            // If we get a 400 error with "No fields to update", it might be because 
+            // the backend doesn't recognize photo_url. Just return the current profile 
+            // since the upload already succeeded.
+            if (response.code == 400 && responseBody.contains("No fields to update")) {
+                android.util.Log.d(TAG, "📸 ⚠️ Backend says 'No fields to update', but upload succeeded. Refreshing profile...")
+                return@withContext getProfile()
+            }
+            
+            throw Exception("Backend update failed: ${response.code} - $responseBody")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "📸 ❌ Error updating profile: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    suspend fun updateNotificationSettings(notificationSettings: Map<String, Boolean>): Profile = withContext(Dispatchers.IO) {
+        val token = getAccessToken() ?: throw Exception("Not authenticated")
+        android.util.Log.d(TAG, "🔥 updateNotificationSettings called with: $notificationSettings")
+        
+        try {
+            // Build notification_settings JSON object
+            val notificationSettingsJson = buildJsonObject {
+                notificationSettings.forEach { (key, value) ->
+                    put(key, value)
+                }
+            }
+            
+            // Build request body with notification_settings key
+            val requestBody = buildJsonObject {
+                put("notification_settings", notificationSettingsJson)
+            }
+            
+            android.util.Log.d(TAG, "🔥 REQUEST BODY: $requestBody")
+            
+            // Call backend API endpoint (same as web app)
+            val request = Request.Builder()
+                .url("$baseUrl/users/settings")
+                .put(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .build()
+            
+            android.util.Log.d(TAG, "🔥 CALLING: PUT $baseUrl/users/settings")
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            
+            android.util.Log.d(TAG, "🔥 RESPONSE: ${response.code} - $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to update notification settings: ${response.code} - $responseBody")
+            }
+            
+            // Fetch fresh profile from backend
+            val updatedProfile = getProfile()
+            android.util.Log.d(TAG, "🔥 UPDATED PROFILE notification_settings: ${updatedProfile.notificationSettings}")
+            updatedProfile
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Failed to update notification settings: ${e.message}", e)
+            throw Exception("Failed to update notification settings: ${e.message}")
+        }
+    }
+    
+    private suspend fun getStoredProfile(): Profile? = withContext(Dispatchers.IO) {
+        val dataStore = context.dataStore.data.first()
+        val profileJson = dataStore[PROFILE_DATA_KEY]
+        profileJson?.let {
+            try {
+                json.decodeFromString(Profile.serializer(), it)
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Error parsing stored profile", e)
+                null
+            }
+        }
+    }
+    
+    suspend fun getProfile(): Profile = withContext(Dispatchers.IO) {
+        val token = getAccessToken() ?: throw Exception("Not authenticated")
+
+        val request = Request.Builder()
+            .url("$baseUrl/auth/profile")
+            .header("Authorization", "Bearer $token")
+            .get()
+            .build()
+
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw Exception("Empty response")
+
+        if (!response.isSuccessful) {
+            throw Exception("Failed to fetch profile: ${response.code} - $responseBody")
+        }
+
+        android.util.Log.d(TAG, "Profile response body: $responseBody")
+        
+        val root = json.parseToJsonElement(responseBody).jsonObject
+        val data = root["data"]?.jsonObject ?: throw Exception("Profile response missing data")
+
+        fun JsonObject.string(key: String) = this[key]?.jsonPrimitive?.contentOrNull
+        fun JsonObject.int(key: String) = this[key]?.jsonPrimitive?.intOrNull
+
+        android.util.Log.d(TAG, "Profile phone field: ${data.string("phone")}")
+        
+        val notificationSettingsJson = data["notification_settings"]?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.jsonObject
+        val notificationSettings = notificationSettingsJson?.mapNotNull { entry ->
+            entry.value.jsonPrimitive.booleanOrNull?.let { entry.key to it }
+        }?.toMap()
+
+        val profile = Profile(
+            id = data["id"]?.jsonPrimitive?.content ?: "",
+            userId = data.string("user_id"),
+            name = data["name"]?.jsonPrimitive?.content ?: "",
+            email = data["email"]?.jsonPrimitive?.content ?: "",
+            phone = data.string("phone"),
+            photoUrl = data.string("photo_url"),
+            position = data.string("position"),
+            role = data["role"]?.jsonPrimitive?.content ?: "staff",
+            branchId = data.string("branch_id"),
+            branchContext = data.string("branch_context"),
+            branchName = data.string("branch_name"),
+            branchLocation = data.string("branch_location") ?: data.string("branch_context"),
+            districtName = data.string("district_name"),
+            regionName = data.string("region_name"),
+            regionId = data.string("region_id"),
+            districtId = data.string("district_id"),
+            lastAccess = data.string("last_access"),
+            accessCount = data.int("access_count"),
+            createdAt = data.string("created_at") ?: "",
+            updatedAt = data.string("updated_at") ?: data.string("created_at") ?: "",
+            notificationSettings = notificationSettings,
+            stockAlertFrequencies = data["stock_alert_frequencies"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull },
+            dailyScheduleTime = data.string("daily_schedule_time"),
+            weeklyScheduleDay = data.int("weekly_schedule_day"),
+            weeklyScheduleTime = data.string("weekly_schedule_time"),
+            monthlyScheduleDate = data.int("monthly_schedule_date"),
+            monthlyScheduleTime = data.string("monthly_schedule_time"),
+            eventReminderFrequencies = data["event_reminder_frequencies"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull },
+            eventDailyScheduleTime = data.string("event_daily_schedule_time"),
+            eventWeeklyScheduleDay = data.int("event_weekly_schedule_day"),
+            eventWeeklyScheduleTime = data.string("event_weekly_schedule_time"),
+            eventMonthlyScheduleDate = data.int("event_monthly_schedule_date"),
+            eventMonthlyScheduleTime = data.string("event_monthly_schedule_time"),
+            softdrinkTrendsFrequencies = data["softdrink_trends_frequencies"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull },
+            softdrinkTrendsDailyScheduleTime = data.string("softdrink_trends_daily_schedule_time"),
+            softdrinkTrendsWeeklyScheduleDay = data.int("softdrink_trends_weekly_schedule_day"),
+            softdrinkTrendsWeeklyScheduleTime = data.string("softdrink_trends_weekly_schedule_time"),
+            softdrinkTrendsMonthlyScheduleDate = data.int("softdrink_trends_monthly_schedule_date"),
+            softdrinkTrendsMonthlyScheduleTime = data.string("softdrink_trends_monthly_schedule_time"),
+            assistantManagerStockInAccess = notificationSettingsJson?.get("assistant_manager_stock_in_access")?.jsonPrimitive?.booleanOrNull
+        )
+        
+        android.util.Log.d(TAG, "Created profile with phone: ${profile.phone}")
+
+        // Cache profile for offline access
+        context.dataStore.edit { preferences ->
+            preferences[PROFILE_DATA_KEY] = json.encodeToString(Profile.serializer(), profile)
+        }
+
+        profile
+    }
+    
+    fun setToken(token: String?) {
+        // For demo purposes, token management is handled in DataStore
+        // In production, this would set Authorization header
+    }
+    
+    // Demo stock and items methods (OLD - to be removed)
+    suspend fun getStockDataOld(): Result<List<Stock>> {
+        return try {
+            // Mock stock data
+            val mockStock = listOf(
+                Stock(
+                    id = "stock-1",
+                    itemId = "item-1",
+                    branchId = "branch-1",
+                    currentQuantity = 50,
+                    reservedQuantity = 5,
+                    availableQuantity = 45,
+                    lastUpdated = "2024-11-07T10:00:00Z"
+                )
+            )
+            
+            Result.success(mockStock)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getItems(): Result<List<Item>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/items")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to get items: ${response.code} - $body")
+                throw Exception("Failed to get items: ${response.message}")
+            }
+            
+            android.util.Log.d("ApiClient", "Items response: $body")
+            
+            val jsonElement = json.parseToJsonElement(body ?: "{}")
+            val dataArray = jsonElement.jsonObject["data"]?.jsonArray
+            
+            if (dataArray == null) {
+                android.util.Log.e("ApiClient", "No data array in response")
+                throw Exception("Invalid response format")
+            }
+            
+            val items = dataArray.map { element ->
+                json.decodeFromJsonElement(Item.serializer(), element)
+            }
+            android.util.Log.d("ApiClient", "Parsed ${items.size} items")
+            
+            Result.success(items)
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error fetching items", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun createItem(itemData: Map<String, Any?>): Result<Item> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = buildJsonObject {
+                itemData.forEach { (key, value) ->
+                    when (value) {
+                        is String -> put(key, value)
+                        is Int -> put(key, value)
+                        is Double -> put(key, value)
+                        is Boolean -> put(key, value)
+                        null -> put(key, JsonNull)
+                    }
+                }
+            }
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/items")
+                .header("Authorization", "Bearer $token")
+                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(httpRequest).execute()
+            val body = response.body?.string()
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to create item: ${response.code} - $body")
+                throw Exception("Failed to create item: ${response.message}")
+            }
+            
+            val jsonElement = json.parseToJsonElement(body ?: "{}")
+            val dataObject = jsonElement.jsonObject["data"]
+            
+            val item = json.decodeFromJsonElement(Item.serializer(), dataObject!!)
+            Result.success(item)
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error creating item", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun updateItem(itemId: String, itemData: Map<String, Any?>): Result<Item> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = buildJsonObject {
+                itemData.forEach { (key, value) ->
+                    when (value) {
+                        is String -> put(key, value)
+                        is Int -> put(key, value)
+                        is Double -> put(key, value)
+                        is Boolean -> put(key, value)
+                        null -> put(key, JsonNull)
+                    }
+                }
+            }
+            
+            android.util.Log.d("ApiClient", "Updating item $itemId with data: ${requestBody.toString()}")
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/items/$itemId")
+                .header("Authorization", "Bearer $token")
+                .put(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(httpRequest).execute()
+            val body = response.body?.string()
+            
+            android.util.Log.d("ApiClient", "Update response: ${response.code} - $body")
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to update item: ${response.code} - $body")
+                throw Exception("Failed to update item: ${response.message}")
+            }
+            
+            val jsonElement = json.parseToJsonElement(body ?: "{}")
+            val dataObject = jsonElement.jsonObject["data"]
+            
+            val item = json.decodeFromJsonElement(Item.serializer(), dataObject!!)
+            Result.success(item)
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error updating item", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun deleteItem(itemId: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/items/$itemId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            
+            val response = client.newCall(httpRequest).execute()
+            
+            if (!response.isSuccessful) {
+                val body = response.body?.string()
+                android.util.Log.e("ApiClient", "Failed to delete item: ${response.code} - $body")
+                throw Exception("Failed to delete item: ${response.message}")
+            }
+            
+            Result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error deleting item", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getMoveoutLists(): Result<List<MoveoutList>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/moveout-lists")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to get moveout lists: ${response.code} - $body")
+                throw Exception("Failed to get moveout lists: ${response.message}")
+            }
+            
+            android.util.Log.d("ApiClient", "Moveout lists response: $body")
+            
+            // Parse the wrapper response
+            val jsonElement = json.parseToJsonElement(body ?: "{}")
+            val dataArray = jsonElement.jsonObject["data"]?.jsonArray
+            
+            if (dataArray == null) {
+                android.util.Log.e("ApiClient", "No data array in response")
+                throw Exception("Invalid response format")
+            }
+            
+            val lists = dataArray.map { element ->
+                json.decodeFromJsonElement(MoveoutList.serializer(), element)
+            }
+            android.util.Log.d("ApiClient", "Parsed ${lists.size} moveout lists")
+            
+            Result.success(lists)
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error fetching moveout lists", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun createMoveoutList(request: CreateMoveoutListRequest): Result<MoveoutList> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            // Transform to match backend API (snake_case)
+            val requestBody = buildJsonObject {
+                put("title", request.title)
+                request.description?.let { put("description", it) }
+                putJsonArray("items") {
+                    request.items.forEach { item ->
+                        addJsonObject {
+                            put("item_id", item.itemId)
+                            put("item_name", item.itemName)
+                            put("available_amount", item.availableAmount)
+                            put("request_amount", item.requestAmount)
+                            put("category", item.category)
+                        }
+                    }
+                }
+            }
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/moveout-lists")
+                .header("Authorization", "Bearer $token")
+                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(httpRequest).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e(TAG, "Failed to create moveout list: ${response.code} - $responseBody")
+                throw Exception("Failed to create moveout list: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<MoveoutList>>(responseBody)
+            android.util.Log.d(TAG, "Created moveout list successfully: ${apiResponse.data}")
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error creating moveout list", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun processMoveoutItem(
+        listId: String,
+        itemId: String,
+        quantity: Int,
+        userName: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = buildJsonObject {
+                put("itemId", itemId)
+                put("quantity", quantity)
+                put("userName", userName)
+            }
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/moveout-lists/$listId/process-item")
+                .header("Authorization", "Bearer $token")
+                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(httpRequest).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e(TAG, "Failed to process moveout item: ${response.code} - $responseBody")
+                throw Exception("Failed to process moveout item: ${response.code}")
+            }
+            
+            android.util.Log.d(TAG, "Processed moveout item successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error processing moveout item", e)
+            Result.failure(e)
+        }
+    }
+    
+    // Calendar Events API
+    suspend fun getCalendarEvents(): List<CalendarEvent> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/calendar-events")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to get calendar events: ${response.code} - $body")
+                return@withContext emptyList()
+            }
+            
+            android.util.Log.d("ApiClient", "Calendar Events Response: $body")
+            
+            // Parse response: {"success":true,"data":[...]}
+            val jsonElement = json.parseToJsonElement(body ?: "")
+            val jsonObject = jsonElement.jsonObject
+            val dataArray = jsonObject["data"]?.jsonArray
+            
+            dataArray?.mapNotNull { element ->
+                try {
+                    json.decodeFromJsonElement(CalendarEvent.serializer(), element)
+                } catch (e: Exception) {
+                    android.util.Log.e("ApiClient", "Error parsing calendar event: ${e.message}")
+                    null
+                }
+            } ?: emptyList()
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error fetching calendar events", e)
+            emptyList()
+        }
+    }
+    
+    suspend fun createCalendarEvent(
+        title: String,
+        description: String? = null,
+        eventDate: String,
+        eventType: String = "reorder",
+        branchId: String? = null
+    ): Result<CalendarEvent> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = buildJsonObject {
+                put("title", title)
+                description?.let { put("description", it) }
+                put("event_date", eventDate)
+                put("event_type", eventType)
+                branchId?.let { put("branch_id", it) }
+            }
+            
+            android.util.Log.d("ApiClient", "Creating calendar event: $requestBody")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/calendar-events")
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e("ApiClient", "Failed to create calendar event: ${response.code} - $body")
+                return@withContext Result.failure(Exception("Failed to create event: $body"))
+            }
+            
+            android.util.Log.d("ApiClient", "Create Event Response: $body")
+            
+            // Parse response: {"success":true,"data":{...}}
+            val jsonElement = json.parseToJsonElement(body ?: "")
+            val jsonObject = jsonElement.jsonObject
+            val dataObject = jsonObject["data"]?.jsonObject
+            
+            if (dataObject != null) {
+                val event = json.decodeFromJsonElement(CalendarEvent.serializer(), dataObject)
+                Result.success(event)
+            } else {
+                Result.failure(Exception("Invalid response format"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ApiClient", "Error creating calendar event", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getCurrentUser(): User? {
+        return try {
+            val userData = context.dataStore.data.first()[USER_DATA_KEY]
+            userData?.let { json.decodeFromString(User.serializer(), it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    suspend fun getCurrentProfile(): Profile? {
+        return try {
+            val profileData = context.dataStore.data.first()[PROFILE_DATA_KEY]
+            profileData?.let { json.decodeFromString(Profile.serializer(), it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    fun isLoggedIn(): Flow<Boolean> {
+        return context.dataStore.data.map { preferences ->
+            preferences[ACCESS_TOKEN_KEY]?.isNotEmpty() == true
+        }
+    }
+    
+        suspend fun getAccessToken(): String? {
+        return context.dataStore.data.first()[ACCESS_TOKEN_KEY]
+    }
+    
+    // Dashboard API methods
+    @Serializable
+    data class ApiResponse<T>(
+        val success: Boolean,
+        val data: T
+    )
+    
+    @Serializable
+    data class StockItem(
+        val id: String? = null,
+        val item_id: String? = null,
+        val current_quantity: Int = 0,
+        val last_updated: String? = null,
+        val items: ItemDetails? = null
+    )
+    
+    @Serializable
+    data class ItemDetails(
+        val id: String? = null,
+        val name: String? = null,
+        val category: String? = null,
+        val unit: String? = null,
+        val threshold_level: Int = 0,
+        val low_level: Int? = null,
+        val critical_level: Int? = null,
+        val branch_id: String? = null,
+        val base_unit: String? = null,
+        val enable_packaging: Boolean? = false,
+        val packaging_unit: String? = null,
+        val units_per_package: Int? = null,
+        val image_url: String? = null
+    )
+    
+    @Serializable
+    data class StockReceipt(
+        val id: String,
+        val supplier_name: String,
+        val receipt_file_name: String,
+        val receipt_file_path: String? = null,
+        val remarks: String? = null,
+        val status: String, // 'pending', 'approved', 'rejected'
+        val created_at: String,
+        val reviewed_at: String? = null,
+        val reviewed_by_name: String? = null,
+        val submitted_by_name: String? = null
+    )
+    
+    // Reports data classes
+    @Serializable
+    data class StockReportItem(
+        val id: String,
+        val name: String,
+        val category: String,
+        val current_quantity: Int,
+        val threshold_level: Int,
+        val status: String // 'critical', 'low', 'adequate'
+    )
+    
+    @Serializable
+    data class MovementReportItem(
+        val id: String,
+        val item_name: String,
+        val movement_type: String, // 'in' or 'out'
+        val quantity: Int,
+        val created_at: String,
+        val user_name: String? = null
+    )
+    
+    @Serializable
+    data class SoftDrinksReportResponse(
+        val data: List<SoftDrinksWeekData>,
+        val summary: SoftDrinksSummary?
+    )
+    
+    @Serializable
+    data class SoftDrinksWeekData(
+        val week_start: String,
+        val week_end: String,
+        val total_stock_in: Int,
+        val total_stock_out: Int,
+        val total_net_change: Int,
+        val overall_trend: String,
+        val items: List<SoftDrinksItemData>
+    )
+    
+    @Serializable
+    data class SoftDrinksItemData(
+        val item_name: String,
+        val stock_in: Int,
+        val stock_out: Int,
+        val net_change: Int,
+        val trend: String
+    )
+    
+    @Serializable
+    data class SoftDrinksSummary(
+        val total_weeks: Int,
+        val total_stock_in: Int,
+        val total_stock_out: Int,
+        val total_net_change: Int
+    )
+    
+    // Analytics data classes
+    @Serializable
+    data class AnalyticsResponse(
+        val totalItems: Int,
+        val lowStockItems: Int,
+        val activeUsers: Int,
+        val stockMovements: Int,
+        val items: List<AnalyticsItem>? = null,
+        val movements: List<AnalyticsMovement>? = null
+    )
+    
+    @Serializable
+    data class AnalyticsItem(
+        val category: String
+    )
+    
+    @Serializable
+    data class AnalyticsMovement(
+        val created_at: String,
+        val movement_type: String,
+        val quantity: Int,
+        val item_name: String? = null
+    )
+    
+    @Serializable
+    data class UsageAnalyticsItem(
+        val period: String,
+        val usage: Int
+    )
+    
+    @Serializable
+    data class StaffMember(
+        val id: String,
+        val user_id: String? = null,
+        val email: String,
+        val name: String,
+        val phone: String? = null,
+        val photo_url: String? = null,
+        val position: String? = null,
+        val role: String, // 'regional_manager', 'district_manager', 'manager', 'assistant_manager', 'staff'
+        val branch_id: String? = null,
+        val region_id: String? = null,
+        val district_id: String? = null,
+        val district_name: String? = null,
+        val last_access: String? = null,
+        val access_count: Int = 0,
+        val created_at: String? = null,
+        val updated_at: String? = null
+    )
+    
+    @Serializable
+    data class ActivityLogResponse(
+        val id: String,
+        val action: String,
+        val details: kotlinx.serialization.json.JsonElement? = null,
+        val created_at: String,
+        val user_id: String? = null,
+        val user_name: String? = null,
+        val user_email: String? = null,
+        val entity_type: String? = null,
+        val entity_id: String? = null,
+        val profiles: ProfileInfo? = null
+    )
+    
+    @Serializable
+    data class ProfileInfo(
+        val name: String
+    )
+    
+    // Notifications API
+    @Serializable
+    private data class BasicResponse(
+        val success: Boolean,
+        val message: String? = null
+    )
+    
+    @Serializable
+    private data class NotificationsResponse(
+        val success: Boolean,
+        val data: List<NotificationData>
+    )
+    
+    @Serializable
+    private data class NotificationData(
+        val id: String,
+        val type: String? = null,
+        val message: String? = null,
+        @SerialName("created_at")
+        val createdAt: String? = null,
+        @SerialName("is_read")
+        val isRead: Boolean? = false
+    )
+    
+    suspend fun getNotifications(): Result<List<Notification>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/notifications")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch notifications: ${response.code} - $responseBody")
+            }
+            
+            val notificationsResponse = json.decodeFromString<NotificationsResponse>(responseBody)
+            val notifications = notificationsResponse.data.map { data ->
+                Notification(
+                    id = data.id,
+                    title = "",
+                    message = data.message ?: "",
+                    type = data.type ?: "general",
+                    isRead = data.isRead ?: false,
+                    createdAt = data.createdAt ?: "",
+                    userId = ""
+                )
+            }
+            
+            Result.success(notifications)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching notifications: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun markNotificationAsRead(notificationId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            android.util.Log.d(TAG, "Marking notification $notificationId as read")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/notifications/$notificationId/read")
+                .header("Authorization", "Bearer $token")
+                .patch(ByteArray(0).toRequestBody(null))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            
+            android.util.Log.d(TAG, "Mark as read response: ${response.code} - $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to mark notification as read: ${response.code} - $responseBody")
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error marking notification as read: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun uploadProfileImage(userId: String, imageBytes: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            android.util.Log.d(TAG, "📸 Starting image upload for user: $userId")
+            val fileName = "$userId/${System.currentTimeMillis()}.jpg"
+            
+            // Supabase Storage URL
+            val storageUrl = "$supabaseUrl/storage/v1/object/avatars/$fileName"
+            
+            val requestBody = imageBytes.toRequestBody("image/jpeg".toMediaType())
+            
+            val request = Request.Builder()
+                .url(storageUrl)
+                .header("Authorization", "Bearer $serviceRoleKey")
+                .header("apikey", serviceRoleKey)
+                .header("x-upsert", "true") // Overwrite if exists
+                .post(requestBody)
+                .build()
+                
+            var response = client.newCall(request).execute()
+            
+            // If bucket not found, try to create it
+            if (response.code == 404) {
+                val errorBody = response.body?.string() ?: ""
+                
+                if (errorBody.contains("Bucket not found", ignoreCase = true)) {
+                    android.util.Log.d(TAG, "📸 Bucket not found, creating 'avatars' bucket...")
+                    createAvatarsBucket(serviceRoleKey)
+                    
+                    // Retry upload
+                    val retryRequest = request.newBuilder().build()
+                    response = client.newCall(retryRequest).execute()
+                } else {
+                    throw Exception("Upload failed: ${response.code} - $errorBody")
+                }
+            }
+            
+            if (!response.isSuccessful) {
+                 val body = response.body?.string()
+                 throw Exception("Upload failed: ${response.code} - $body")
+            }
+            
+            // Construct public URL
+            val publicUrl = "$supabaseUrl/storage/v1/object/public/avatars/$fileName"
+            android.util.Log.d(TAG, "📸 ✅ Upload successful! URL: $publicUrl")
+            
+            // Update via Supabase RPC function (bypassing backend API which doesn't support photo_url)
+            android.util.Log.d(TAG, "📸 Calling Supabase RPC to update photo_url...")
+            try {
+                val rpcBody = buildJsonObject {
+                    put("user_id_param", userId)
+                    put("new_photo_url", publicUrl)
+                }
+                
+                val rpcRequest = Request.Builder()
+                    .url("$supabaseUrl/rest/v1/rpc/update_user_photo")
+                    .header("Authorization", "Bearer $serviceRoleKey")
+                    .header("apikey", serviceRoleKey)
+                    .header("Content-Type", "application/json")
+                    .post(rpcBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                    
+                val rpcResponse = client.newCall(rpcRequest).execute()
+                val rpcResponseBody = rpcResponse.body?.string() ?: ""
+                
+                android.util.Log.d(TAG, "📸 RPC update response: ${rpcResponse.code} - $rpcResponseBody")
+                
+                if (rpcResponse.isSuccessful) {
+                    android.util.Log.d(TAG, "📸 ✅ RPC update successful!")
+                } else if (rpcResponse.code == 404) {
+                        // RPC function doesn't exist, try direct UPDATE with service role key
+                        android.util.Log.d(TAG, "📸 RPC function not found, using direct UPDATE...")
+                        val updateBody = buildJsonObject {
+                            put("photo_url", publicUrl)
+                        }
+                        
+                        val updateRequest = Request.Builder()
+                            .url("$supabaseUrl/rest/v1/users?id=eq.$userId")
+                            .header("Authorization", "Bearer $serviceRoleKey")
+                            .header("apikey", serviceRoleKey)
+                            .header("Content-Type", "application/json")
+                            .header("Prefer", "return=minimal")
+                            .patch(updateBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+                            
+                        val updateResponse = client.newCall(updateRequest).execute()
+                        val updateResponseBody = updateResponse.body?.string() ?: ""
+                        
+                        android.util.Log.d(TAG, "📸 Direct UPDATE response: ${updateResponse.code} - $updateResponseBody")
+                        
+                        if (updateResponse.isSuccessful) {
+                            android.util.Log.d(TAG, "📸 ✅ Direct UPDATE successful!")
+                        } else {
+                            android.util.Log.e(TAG, "📸 ❌ Direct UPDATE failed: ${updateResponse.code}")
+                        }
+                } else {
+                    android.util.Log.e(TAG, "📸 ⚠️ RPC update failed but upload succeeded")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "📸 ⚠️ Update failed: ${e.message}", e)
+            }
+            
+            Result.success(publicUrl)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "📸 ❌ Error uploading image: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    private fun createAvatarsBucket(serviceRoleKey: String) {
+        try {
+            val requestBody = buildJsonObject {
+                put("id", "avatars")
+                put("name", "avatars")
+                put("public", true)
+                put("file_size_limit", 5242880) // 5MB
+                putJsonArray("allowed_mime_types") {
+                    add(JsonPrimitive("image/jpeg"))
+                    add(JsonPrimitive("image/png"))
+                    add(JsonPrimitive("image/gif"))
+                }
+            }
+
+            val request = Request.Builder()
+                .url("https://gvlaokxdgcnttyovdhku.supabase.co/storage/v1/bucket")
+                .header("Authorization", "Bearer $serviceRoleKey")
+                .header("apikey", serviceRoleKey)
+                .header("Content-Type", "application/json")
+                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val body = response.body?.string()
+            android.util.Log.d(TAG, "Create bucket response: ${response.code} - $body")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error creating bucket", e)
+        }
+    }
+
+    suspend fun getStockData(): Result<List<StockItem>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/stock")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch stock data: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<StockItem>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching stock data", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getReceipts(): Result<List<StockReceipt>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/receipts")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch receipts: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<StockReceipt>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching receipts", e)
+            Result.failure(e)
+        }
+    }
+    
+    // Reports endpoints
+    suspend fun getStockReport(): Result<List<StockReportItem>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/reports/stock")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch stock report: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<StockReportItem>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching stock report", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getMovementsReport(): Result<List<MovementReportItem>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/reports/movements")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch movements report: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<MovementReportItem>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching movements report", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getSoftDrinksReport(weeks: Int = 4): Result<SoftDrinksReportResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/reports/softdrinks-weekly?weeks=$weeks")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch soft drinks report: ${response.code}")
+            }
+            
+            val reportResponse = json.decodeFromString<SoftDrinksReportResponse>(responseBody)
+            Result.success(reportResponse)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching soft drinks report", e)
+            Result.failure(e)
+        }
+    }
+    
+    // Analytics endpoints
+    suspend fun getAnalyticsData(): Result<AnalyticsResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/analytics")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch analytics: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<AnalyticsResponse>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching analytics", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getItemUsageAnalytics(period: String = "daily", itemId: String? = null): Result<List<UsageAnalyticsItem>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val url = if (itemId != null) {
+                "$baseUrl/analytics/item-usage/$period?itemId=$itemId"
+            } else {
+                "$baseUrl/analytics/item-usage/$period"
+            }
+            
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch item usage analytics: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<UsageAnalyticsItem>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching item usage analytics", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getStaff(): Result<List<StaffMember>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/users/staff")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch staff: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<StaffMember>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching staff", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getActivityLogs(): Result<List<ActivityLogResponse>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/activity-logs?limit=10")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch activity logs: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<ActivityLogResponse>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching activity logs", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun getWeather(city: String): Result<WeatherData> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val encodedCity = java.net.URLEncoder.encode(city, "UTF-8")
+            val weatherUrl = "$baseUrl/weather/current?location=$encodedCity"
+            android.util.Log.d(TAG, "🌤️ Weather API URL: $weatherUrl")
+            android.util.Log.d(TAG, "🌤️ Original city: $city, Encoded: $encodedCity")
+            
+            val request = Request.Builder()
+                .url(weatherUrl)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            android.util.Log.d(TAG, "Weather API Response Code: ${response.code}")
+            android.util.Log.d(TAG, "Weather API Response: $responseBody")
+            
+            if (!response.isSuccessful) {
+                android.util.Log.e(TAG, "Weather API failed with code: ${response.code}")
+                throw Exception("Failed to fetch weather: ${response.code}")
+            }
+            
+            @Serializable
+            data class WeatherResponse(
+                val success: Boolean,
+                val data: WeatherData
+            )
+            
+            val weatherResponse = json.decodeFromString<WeatherResponse>(responseBody)
+            android.util.Log.d(TAG, "Weather parsed successfully: ${weatherResponse.data}")
+            Result.success(weatherResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching weather", e)
+            // Return default weather on error
+            Result.success(
+                WeatherData(
+                    temperature = 15.0,
+                    condition = "Clear sky",
+                    location = city,
+                    humidity = 70,
+                    windSpeed = 10.0
+                )
+            )
+        }
+    }
+    
+    suspend fun getBranches(districtId: String? = null): Result<List<Branch>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val url = if (districtId != null) {
+                "$baseUrl/branches?district_id=$districtId"
+            } else {
+                "$baseUrl/branches"
+            }
+            
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch branches: ${response.code}")
+            }
+            
+            @Serializable
+            data class BranchesResponse(
+                val success: Boolean,
+                val data: List<Branch>
+            )
+            
+            val branchesResponse = json.decodeFromString<BranchesResponse>(responseBody)
+            Result.success(branchesResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching branches", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun submitICADelivery(
+        userName: String,
+        entries: List<com.stocknexus.ui.screens.ICADeliveryEntry>
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val icaEntries = entries.map { entry ->
+                ICAEntry(
+                    type = entry.type,
+                    amount = entry.amount,
+                    timeOfDay = entry.timeOfDay
+                )
+            }
+            
+            val requestBody = ICADeliveryRequest(
+                userName = userName,
+                entries = icaEntries,
+                submittedAt = java.time.Instant.now().toString()
+            )
+            
+            val requestJson = json.encodeToString(ICADeliveryRequest.serializer(), requestBody)
+            android.util.Log.d(TAG, "ICA Delivery Request JSON: $requestJson")
+            
+            val body = requestJson.toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("$baseUrl/ica-delivery")
+                .header("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            
+            android.util.Log.d(TAG, "ICA Delivery Response Code: ${response.code}")
+            android.util.Log.d(TAG, "ICA Delivery Response Body: $responseBody")
+            
+            if (!response.isSuccessful) {
+                // Try to parse error message
+                val errorMessage = try {
+                    @Serializable
+                    data class ErrorResponse(val error: String? = null, val message: String? = null, val duplicate: Boolean? = false)
+                    val errorResponse = json.decodeFromString<ErrorResponse>(responseBody)
+                    errorResponse.error ?: errorResponse.message ?: "Failed to submit: ${response.code}"
+                } catch (e: Exception) {
+                    responseBody.ifEmpty { "Failed to submit: ${response.code}" }
+                }
+                throw Exception(errorMessage)
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error submitting ICA delivery: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    @Serializable
+    data class ICADeliveryRecord(
+        val id: Int,
+        val user_name: String,
+        val type: String,
+        val amount: Int,
+        val time_of_day: String,
+        val submitted_at: String
+    )
+    
+    suspend fun getICADeliveryRecords(
+        startDate: String? = null,
+        endDate: String? = null
+    ): Result<List<ICADeliveryRecord>> = withContext(Dispatchers.IO) {
+        try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            var url = "$baseUrl/ica-delivery"
+            val params = mutableListOf<String>()
+            if (startDate != null && startDate.isNotBlank()) {
+                params.add("startDate=$startDate")
+            }
+            if (endDate != null && endDate.isNotBlank()) {
+                params.add("endDate=$endDate")
+            }
+            if (params.isNotEmpty()) {
+                url += "?" + params.joinToString("&")
+            }
+            
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            android.util.Log.d(TAG, "ICA Delivery List URL: $url")
+            android.util.Log.d(TAG, "ICA Delivery List Response Code: ${response.code}")
+            android.util.Log.d(TAG, "ICA Delivery List Response Body: $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch ICA delivery records: ${response.code} - $responseBody")
+            }
+            
+            val records = json.decodeFromString<List<ICADeliveryRecord>>(responseBody)
+            Result.success(records)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching ICA delivery records", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun deleteICADeliveryRecord(recordId: Int): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/ica-delivery/$recordId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to delete ICA delivery record: ${response.code}")
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error deleting ICA delivery record", e)
+            Result.failure(e)
+        }
+    }
+    
+    // Stock Out methods
+    suspend fun updateStockQuantity(
+        itemId: String,
+        movementType: String,
+        quantity: Int,
+        reason: String? = null,
+        unitType: String = "base",
+        unitQuantity: Int = quantity,
+        unitLabel: String = "piece"
+    ): Result<StockItem> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = buildJsonObject {
+                put("item_id", itemId)
+                put("movement_type", movementType)
+                put("quantity", quantity)
+                if (reason != null) put("reason", reason)
+                put("unit_type", unitType)
+                put("original_quantity", unitQuantity)
+                put("unit_label", unitLabel)
+            }
+            
+            val body = requestBody.toString().toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("$baseUrl/stock/movement")
+                .header("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to update stock: ${response.code} - $responseBody")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<StockItem>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error updating stock quantity", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun initializeStock(): Result<InitializeStockResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/stock/initialize")
+                .header("Authorization", "Bearer $token")
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to initialize stock: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<InitializeStockResponse>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error initializing stock", e)
+            Result.failure(e)
+        }
+    }
+    
+    @Serializable
+    data class InitializeStockResponse(
+        val initialized: Int = 0,
+        val message: String? = null
+    )
+
+    // Staff Management Functions
+    suspend fun createStaff(staffData: Map<String, Any?>): Result<StaffMember> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val jsonData = buildJsonObject {
+                staffData.forEach { (key, value) ->
+                    when (value) {
+                        null -> put(key, JsonNull)
+                        is String -> put(key, value)
+                        is Int -> put(key, value)
+                        is Boolean -> put(key, value)
+                        else -> put(key, value.toString())
+                    }
+                }
+            }
+            
+            val body = jsonData.toString().toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("$baseUrl/users/staff")
+                .header("Authorization", "Bearer $token")
+                .post(body)
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to create staff: ${response.code} - $responseBody")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<StaffMember>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error creating staff", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateStaff(staffId: String, staffData: Map<String, Any?>): Result<StaffMember> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val jsonData = buildJsonObject {
+                staffData.forEach { (key, value) ->
+                    when (value) {
+                        null -> put(key, JsonNull)
+                        is String -> put(key, value)
+                        is Int -> put(key, value)
+                        is Boolean -> put(key, value)
+                        else -> put(key, value.toString())
+                    }
+                }
+            }
+            
+            val body = jsonData.toString().toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("$baseUrl/users/staff/$staffId")
+                .header("Authorization", "Bearer $token")
+                .put(body)
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to update staff: ${response.code} - $responseBody")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<StaffMember>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error updating staff", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteStaff(staffId: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/users/staff/$staffId")
+                .header("Authorization", "Bearer $token")
+                .delete()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to delete staff: ${response.code}")
+            }
+            
+            Result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error deleting staff", e)
+            Result.failure(e)
+        }
+    }
+
+    // Region & District Functions
+    suspend fun getRegions(): Result<List<Region>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val request = Request.Builder()
+                .url("$baseUrl/regions")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch regions: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<Region>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching regions", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getDistricts(regionId: String? = null): Result<List<District>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val url = if (regionId != null) {
+                "$baseUrl/districts?region_id=$regionId"
+            } else {
+                "$baseUrl/districts"
+            }
+            
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to fetch districts: ${response.code}")
+            }
+            
+            val apiResponse = json.decodeFromString<ApiResponse<List<District>>>(responseBody)
+            Result.success(apiResponse.data)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching districts", e)
+            Result.failure(e)
+        }
+    }
+
+    @Serializable
+    data class Region(
+        val id: String,
+        val name: String,
+        val description: String? = null,
+        val created_at: String? = null
+    )
+
+    @Serializable
+    data class District(
+        val id: String,
+        val name: String,
+        val region_id: String,
+        val description: String? = null,
+        val created_at: String? = null
+    )
+    
+    // Helper function to convert Map to JsonElement
+    private fun mapToJsonElement(value: Any?): JsonElement = when (value) {
+        null -> JsonNull
+        is String -> JsonPrimitive(value)
+        is Number -> JsonPrimitive(value)
+        is Boolean -> JsonPrimitive(value)
+        is Map<*, *> -> JsonObject(value.mapNotNull { (key, v) ->
+            (key as? String)?.let { it to mapToJsonElement(v) }
+        }.toMap())
+        is Iterable<*> -> JsonArray(value.map { mapToJsonElement(it) })
+        else -> JsonPrimitive(value.toString())
+    }
+}

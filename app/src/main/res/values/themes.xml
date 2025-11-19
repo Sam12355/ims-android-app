@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme using AppCompat for compatibility -->
+    <style name="Base.Theme.StockNexus" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!-- Customize your light theme here. -->
+        <item name="colorPrimary">@color/stock_nexus_primary</item>
+        <item name="colorPrimaryDark">@color/stock_nexus_primary_variant</item>
+        <item name="colorAccent">@color/stock_nexus_primary</item>
+
+        <item name="android:colorBackground">@color/background_light</item>
+
+        <!-- Text colors -->
+        <item name="android:textColorPrimary">@color/on_background_light</item>
+        <item name="android:textColorSecondary">@color/on_surface_variant_light</item>
+    </style>
+
+    <style name="Theme.StockNexus" parent="Base.Theme.StockNexus" />
+</resources>
