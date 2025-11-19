@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="inventory_categories">
+        <item>Electronics</item>
+        <item>Furniture</item>
+        <item>Office Supplies</item>
+        <item>Hardware</item>
+        <item>Software</item>
+        <item>Accessories</item>
+        <item>Tools</item>
+        <item>Books</item>
+        <item>Clothing</item>
+        <item>Other</item>
+    </string-array>
+
+    <string-array name="user_roles">
+        <item>Administrator</item>
+        <item>Manager</item>
+        <item>Warehouse Staff</item>
+        <item>Analyst</item>
+        <item>Viewer</item>
+    </string-array>
+
+    <string-array name="regions">
+        <item>North Region</item>
+        <item>South Region</item>
+        <item>East Region</item>
+        <item>West Region</item>
+        <item>Central Region</item>
+    </string-array>
+</resources>

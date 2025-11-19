@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Stock Nexus Brand Colors -->
+    <color name="stock_nexus_primary">#E6002A</color>
+    <color name="stock_nexus_primary_variant">#B8001F</color>
+    <color name="stock_nexus_secondary">#6C757D</color>
+
+    <!-- Light Theme Colors -->
+    <color name="stock_nexus_primary_container">#FFCDD2</color>
+    <color name="stock_nexus_on_primary_container">#410002</color>
+
+    <!-- Common Colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- Status Colors -->
+    <color name="success_color">#00C851</color>
+    <color name="warning_color">#FF8800</color>
+    <color name="error_color">#BA1A1A</color>
+    <color name="info_color">#33B5E5</color>
+
+    <!-- Light Theme -->
+    <color name="background_light">#FFFBFF</color>
+    <color name="on_background_light">#1C1B1F</color>
+    <color name="surface_light">#FFFBFF</color>
+    <color name="on_surface_light">#1C1B1F</color>
+    <color name="surface_variant_light">#F4F4F4</color>
+    <color name="on_surface_variant_light">#49454F</color>
+
+    <!-- Dark Theme -->
+    <color name="background_dark">#1C1B1F</color>
+    <color name="on_background_dark">#E6E1E5</color>
+    <color name="surface_dark">#1C1B1F</color>
+    <color name="on_surface_dark">#E6E1E5</color>
+    <color name="surface_variant_dark">#2B2B2B</color>
+    <color name="on_surface_variant_dark">#CAC4D0</color>
+
+    <!-- Chart Colors -->
+    <color name="chart_color_1">#E6002A</color>
+    <color name="chart_color_2">#00C851</color>
+    <color name="chart_color_3">#33B5E5</color>
+    <color name="chart_color_4">#FF8800</color>
+    <color name="chart_color_5">#6C5CE7</color>
+    <color name="chart_color_6">#FF5722</color>
+    <color name="chart_color_7">#4CAF50</color>
+    <color name="chart_color_8">#2196F3</color>
+</resources>
