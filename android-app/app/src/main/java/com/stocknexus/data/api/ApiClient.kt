@@ -40,6 +40,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -936,6 +938,7 @@ class ApiClient private constructor(private val context: Context) {
             
             if (dataObject != null) {
                 val event = json.decodeFromJsonElement(CalendarEvent.serializer(), dataObject)
+                android.util.Log.d("ApiClient", "✅ Event created successfully: ${event.id}")
                 Result.success(event)
             } else {
                 Result.failure(Exception("Invalid response format"))
@@ -943,6 +946,17 @@ class ApiClient private constructor(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.e("ApiClient", "Error creating calendar event", e)
             Result.failure(e)
+        }
+    }
+    
+    private fun formatEventDate(dateString: String): String {
+        return try {
+            val inputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val outputFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+            val date = inputFormat.parse(dateString)
+            date?.let { outputFormat.format(it) } ?: dateString
+        } catch (e: Exception) {
+            dateString
         }
     }
     
@@ -1179,8 +1193,12 @@ class ApiClient private constructor(private val context: Context) {
                 .get()
                 .build()
             
+            android.util.Log.d("ApiClient", "🌐 GET $baseUrl/notifications")
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string() ?: throw Exception("Empty response")
+            
+            android.util.Log.d("ApiClient", "📡 Response Code: ${response.code}")
+            android.util.Log.d("ApiClient", "📄 Response Body: $responseBody")
             
             if (!response.isSuccessful) {
                 throw Exception("Failed to fetch notifications: ${response.code} - $responseBody")

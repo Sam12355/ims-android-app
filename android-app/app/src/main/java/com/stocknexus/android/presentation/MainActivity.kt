@@ -1,9 +1,13 @@
 package com.stocknexus.android.presentation
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
@@ -11,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -38,12 +43,35 @@ import com.stocknexus.ui.screens.auth.EnhancedAuthScreen
 import com.stocknexus.ui.screens.auth.SplashScreen
 import com.stocknexus.ui.viewmodel.AuthViewModel
 import com.stocknexus.ui.viewmodel.AuthViewModelFactory
+import com.stocknexus.service.SocketIOService
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            android.util.Log.d("MainActivity", "Notification permission granted")
+        } else {
+            android.util.Log.d("MainActivity", "Notification permission denied")
+        }
+    }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
+        // Request notification permission for Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
         
         setContent {
             // State for theme toggle
@@ -182,9 +210,13 @@ fun AuthenticatedApp(
     onThemeToggle: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    
+    // Initialize Socket.IO service
+    val socketIOService = remember { SocketIOService(context) }
     
     // Search dialog state
     var showSearchDialog by remember { mutableStateOf(false) }
@@ -205,6 +237,26 @@ fun AuthenticatedApp(
                     currentUserState = updatedUser
                 }
             }
+        }
+    }
+    
+    // Connect to Socket.IO for real-time notifications
+    LaunchedEffect(user) {
+        scope.launch {
+            val token = apiClient.getAccessToken()
+            val branchId = user.branchId ?: ""
+            if (token != null && branchId.isNotEmpty()) {
+                android.util.Log.d("MainActivity", "🔌 Connecting to Socket.IO with branch: $branchId")
+                socketIOService.connect(token, branchId)
+            }
+        }
+    }
+    
+    // Disconnect Socket.IO when leaving
+    DisposableEffect(Unit) {
+        onDispose {
+            android.util.Log.d("MainActivity", "🔌 Disconnecting Socket.IO")
+            socketIOService.disconnect()
         }
     }
     

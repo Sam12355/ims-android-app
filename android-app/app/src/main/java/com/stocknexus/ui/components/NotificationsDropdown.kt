@@ -38,7 +38,8 @@ data class CalendarEvent(
     val id: String,
     val title: String,
     val eventDate: String,
-    val description: String? = null
+    val description: String? = null,
+    val notificationId: String? = null // Link to notification if created from one
 )
 
 data class StockAlert(
@@ -69,7 +70,8 @@ fun NotificationsDropdown(
         try {
             val result = notificationRepository.getNotifications()
             result.onSuccess { data ->
-                notifications = data.map { notif ->
+                // Separate event notifications from general notifications
+                val allNotifs = data.map { notif ->
                     Notification(
                         id = notif.id,
                         type = notif.type ?: "general",
@@ -78,24 +80,31 @@ fun NotificationsDropdown(
                         isRead = notif.isRead ?: false
                     )
                 }.filter { !it.isRead }
+                
+                // Filter out event notifications and put them in events list
+                val (eventNotifs, generalNotifs) = allNotifs.partition { 
+                    it.type.contains("event", ignoreCase = true) || 
+                    it.type.contains("calendar", ignoreCase = true) 
+                }
+                
+                // Convert event notifications to CalendarEvent format
+                events = eventNotifs.map { notif ->
+                    CalendarEvent(
+                        id = notif.id,
+                        title = notif.message,
+                        eventDate = notif.createdAt,
+                        description = null,
+                        notificationId = notif.id
+                    )
+                }
+                
+                // Keep only general notifications
+                notifications = generalNotifs
+                
+                android.util.Log.d("NotificationsDropdown", "Loaded ${notifications.size} general notifications and ${events.size} event notifications")
             }
         } catch (e: Exception) {
             android.util.Log.e("NotificationsDropdown", "Error loading notifications", e)
-        }
-    }
-    
-    suspend fun loadEvents() {
-        try {
-            events = apiClient.getCalendarEvents().map { event ->
-                CalendarEvent(
-                    id = event.id,
-                    title = event.title,
-                    eventDate = event.eventDate,
-                    description = event.description
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("NotificationsDropdown", "Error loading calendar events", e)
         }
     }
     
@@ -122,7 +131,6 @@ fun NotificationsDropdown(
         scope.launch {
             isRefreshing = true
             loadNotifications()
-            loadEvents()
             loadStockAlerts()
             isRefreshing = false
         }
@@ -131,19 +139,34 @@ fun NotificationsDropdown(
     // Load data on first composition
     LaunchedEffect(Unit) {
         loadNotifications()
-        loadEvents()
         loadStockAlerts()
     }
     
     val totalCount = notifications.size + events.size + stockAlerts.size
     
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        Box(
             modifier = Modifier
-                .width(320.dp)
-                .heightIn(max = 600.dp),
-            shape = RoundedCornerShape(12.dp)
+                .fillMaxSize()
+                .clickable(
+                    onClick = onDismiss,
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ),
+            contentAlignment = Alignment.TopEnd
         ) {
+            Card(
+                modifier = Modifier
+                    .padding(top = 56.dp, end = 16.dp)
+                    .width(320.dp)
+                    .heightIn(max = 600.dp)
+                    .clickable(
+                        onClick = {},
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Header
                 Row(
@@ -160,6 +183,18 @@ fun NotificationsDropdown(
                     )
                     
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Close button
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        
                         // Refresh button
                         IconButton(
                             onClick = { refreshAll() },
@@ -222,11 +257,11 @@ fun NotificationsDropdown(
                         }
                     }
                     
-                    // Upcoming Events Section
+                    // Event Reminders Section
                     if (events.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Upcoming Events",
+                                text = "Event Reminders",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -236,8 +271,10 @@ fun NotificationsDropdown(
                         items(events) { event ->
                             EventItem(
                                 event = event,
-                                onDismiss = {
+                                notificationRepository = notificationRepository,
+                                onDismissSuccess = {
                                     events = events.filter { it.id != event.id }
+                                    onNotificationMarkedRead()
                                 }
                             )
                         }
@@ -301,6 +338,7 @@ fun NotificationsDropdown(
                 }
             }
         }
+        }
     }
 }
 
@@ -358,12 +396,32 @@ private fun StockAlertItem(
 @Composable
 private fun EventItem(
     event: CalendarEvent,
-    onDismiss: () -> Unit
+    notificationRepository: NotificationRepository,
+    onDismissSuccess: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    var isProcessing by remember { mutableStateOf(false) }
+    
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onDismiss() }
+            .clickable(enabled = !isProcessing) { 
+                // Mark the event notification as read
+                event.notificationId?.let { notifId ->
+                    isProcessing = true
+                    scope.launch {
+                        android.util.Log.d("NotificationsDropdown", "Marking event notification $notifId as read")
+                        val result = notificationRepository.markNotificationAsRead(notifId)
+                        if (result.isSuccess) {
+                            android.util.Log.d("NotificationsDropdown", "Successfully marked event notification as read")
+                            onDismissSuccess()
+                        } else {
+                            android.util.Log.e("NotificationsDropdown", "Failed to mark event notification as read: ${result.exceptionOrNull()?.message}")
+                            isProcessing = false
+                        }
+                    }
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         color = Color.Transparent
     ) {
@@ -374,7 +432,7 @@ private fun EventItem(
             Icon(
                 imageVector = Icons.Default.Event,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = Color(0xFF2196F3),
                 modifier = Modifier.size(20.dp)
             )
             
@@ -389,18 +447,6 @@ private fun EventItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Surface(
-                    modifier = Modifier.padding(top = 4.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
-                    Text(
-                        text = "Event",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
             }
         }
     }
