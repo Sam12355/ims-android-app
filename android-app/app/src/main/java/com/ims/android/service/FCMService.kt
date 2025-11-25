@@ -27,8 +27,12 @@ class FCMService : FirebaseMessagingService() {
         
         // Check if user is logged in and has notifications enabled
         serviceScope.launch {
+            // Use the EnhancedAuthRepository (auth_preferences) to ensure we read the
+            // same cached user the UI and auth flows write to. ApiClient has a
+            // separate DataStore (auth_prefs) which can be out-of-sync in some flows.
             val apiClient = ApiClient.getInstance(this@FCMService)
-            val currentUser = apiClient.getCurrentUser()
+            val authRepo = com.ims.android.data.repository.EnhancedAuthRepository(this@FCMService, apiClient)
+            val currentUser = authRepo.getCurrentUser()
             
             if (currentUser == null) {
                 Log.d(TAG, "🚫 User not logged in, ignoring notification")
