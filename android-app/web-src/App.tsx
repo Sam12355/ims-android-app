@@ -59,7 +59,7 @@ const App = () => (
               <Route path="/settings" element={<DashboardLayout><Settings /></DashboardLayout>} />
               <Route path="/analytics" element={<DashboardLayout><Analytics /></DashboardLayout>} />
               <Route path="/activity-logs" element={<DashboardLayout><ActivityLogs /></DashboardLayout>} />
-              <Route path="/moveout-list" element={<DashboardLayout><MoveoutList /></DashboardLayout>} />
+              <Route path="/moveout-list" element={<DashboardLayout><RoleGuard allowedRoles={['admin', 'manager', 'assistant_manager']}><MoveoutList /></RoleGuard></DashboardLayout>} />
               <Route path="/notifications" element={<DashboardLayout><NotificationsPage /></DashboardLayout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -42,3 +42,8 @@ captures/
 
 # Full logs
 full_logs.txt
+
+# Firebase config (contains sensitive project IDs)
+# Keep the placeholder, but ignore if real file is added
+# app/google-services.json
+

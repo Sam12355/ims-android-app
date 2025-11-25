@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "956957405610",
+    "project_id": "sy-ims-8e9f3",
+    "storage_bucket": "sy-ims-8e9f3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:956957405610:android:9badb0d6b97740c4ff7bd3",
+        "android_client_info": {
+          "package_name": "com.ims.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlZM5pfcV2dGcOq9uz3kujp5cz4Nt1KIU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

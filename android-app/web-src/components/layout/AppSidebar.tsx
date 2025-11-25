@@ -16,7 +16,6 @@ import {
   MapPin,
   Building,
   Building2,
-  ArrowRight,
   UserCheck,
   Plus,
   Upload
@@ -100,12 +99,6 @@ const menuItems = [
     url: "/activity-logs",
     icon: ClipboardList,
     roles: ['admin', 'manager']
-  },
-  {
-    title: "Moveout List",
-    url: "/moveout-list",
-    icon: ArrowRight,
-    roles: ['staff']
   }
 ];
 
