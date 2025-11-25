@@ -479,6 +479,9 @@ fun AuthenticatedApp(
                 val currentBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = currentBackStackEntry?.destination?.route
                 
+                // collect online members from socket service (for admin UI)
+                val onlineMembers by socketIOService.onlineMembers.collectAsState(initial = emptyList())
+
                 TopAppBar(
                     title = getScreenTitle(currentRoute),
                     userProfile = currentProfile,
@@ -494,6 +497,8 @@ fun AuthenticatedApp(
                     },
                     notificationCount = notificationCount,
                     isDarkTheme = isDarkTheme
+                    ,
+                    onlineMembers = onlineMembers
                 )
             }
         ) { paddingValues ->

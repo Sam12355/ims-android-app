@@ -12,6 +12,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ims.android.data.model.Profile
+import com.ims.android.data.model.UserRole
+import com.ims.android.data.model.OnlineMember
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +27,8 @@ fun TopAppBar(
     onSearchClick: () -> Unit,
     notificationCount: Int = 0,
     isDarkTheme: Boolean = true
+    ,
+    onlineMembers: List<OnlineMember> = emptyList()
 ) {
     CenterAlignedTopAppBar(
         title = {
@@ -38,6 +43,51 @@ fun TopAppBar(
             }
         },
         actions = {
+            // Admin: show online members to the left of the search icon
+            if (userProfile?.userRole == UserRole.ADMIN) {
+                Row(
+                    modifier = Modifier.padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Show up to 5 small avatars
+                    onlineMembers.take(5).forEach { member ->
+                        Box(
+                            modifier = Modifier.size(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!member.photoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = member.photoUrl,
+                                    contentDescription = member.name ?: "Online user",
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = member.name?.firstOrNull()?.toString() ?: "?",
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Small overflow dot if more
+                    if (onlineMembers.size > 5) {
+                        Text("+${onlineMembers.size - 5}", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
             // Search icon
             IconButton(onClick = onSearchClick) {
                 Icon(

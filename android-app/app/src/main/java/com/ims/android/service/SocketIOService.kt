@@ -4,7 +4,11 @@ import android.content.Context
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import org.json.JSONObject
+import com.ims.android.data.model.OnlineMember
 import java.net.URISyntaxException
 
 class SocketIOService(private val context: Context) {
@@ -13,6 +17,9 @@ class SocketIOService(private val context: Context) {
     private var isConnected = false
     private var currentBranchId: String? = null
     private val notificationService = NotificationService(context)
+    // State flow storing the current online members in the branch
+    private val _onlineMembers = MutableStateFlow<List<OnlineMember>>(emptyList())
+    val onlineMembers: StateFlow<List<OnlineMember>> = _onlineMembers
     
     companion object {
         private const val SOCKET_URL = "https://ims-sy.vercel.app"
@@ -48,6 +55,10 @@ class SocketIOService(private val context: Context) {
             socket?.on(Socket.EVENT_DISCONNECT, onDisconnect)
             socket?.on(Socket.EVENT_CONNECT_ERROR, onConnectError)
             socket?.on("notification-update", onNotificationUpdate)
+            // Presence events (if the server supports them)
+            socket?.on("online-members", onOnlineMembers)
+            socket?.on("user-online", onUserOnline)
+            socket?.on("user-offline", onUserOffline)
             
             socket?.connect()
             
@@ -112,6 +123,58 @@ class SocketIOService(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e(TAG, "❌ Error processing notification update", e)
+        }
+    }
+
+    // Presence listeners - receive either an array of user objects or single user events
+    private val onOnlineMembers = Emitter.Listener { args ->
+        try {
+            val payload = args.firstOrNull()
+            if (payload is JSONArray) {
+                val list = mutableListOf<OnlineMember>()
+                for (i in 0 until payload.length()) {
+                    val j = payload.optJSONObject(i) ?: continue
+                    val id = j.optString("id", j.optString("userId", ""))
+                    val name = j.optString("name", null)
+                    val photo = j.optString("photoUrl", j.optString("photo_url", null))
+                    if (id.isNotBlank()) list.add(OnlineMember(id = id, name = name, photoUrl = photo))
+                }
+                _onlineMembers.value = list
+                android.util.Log.d(TAG, "👥 Online members updated: ${list.size}")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error processing online-members event", e)
+        }
+    }
+
+    private val onUserOnline = Emitter.Listener { args ->
+        try {
+            val j = args.firstOrNull() as? JSONObject ?: return@Listener
+            val id = j.optString("id", j.optString("userId", ""))
+            val name = j.optString("name", null)
+            val photo = j.optString("photoUrl", j.optString("photo_url", null))
+            if (id.isNotBlank()) {
+                val current = _onlineMembers.value.toMutableList()
+                // avoid duplicates
+                if (current.none { it.id == id }) {
+                    current.add(0, OnlineMember(id = id, name = name, photoUrl = photo))
+                    _onlineMembers.value = current
+                    android.util.Log.d(TAG, "➕ User online: $id")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error processing user-online event", e)
+        }
+    }
+
+    private val onUserOffline = Emitter.Listener { args ->
+        try {
+            val userId = args.firstOrNull()?.toString() ?: return@Listener
+            val current = _onlineMembers.value.filter { it.id != userId }
+            _onlineMembers.value = current
+            android.util.Log.d(TAG, "➖ User offline: $userId")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error processing user-offline event", e)
         }
     }
     
