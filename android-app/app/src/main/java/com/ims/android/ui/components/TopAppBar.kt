@@ -1,5 +1,6 @@
 package com.ims.android.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -10,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ims.android.data.model.Profile
@@ -44,47 +46,99 @@ fun TopAppBar(
             }
         },
         actions = {
-            // Admin: show online members to the left of the search icon
-            if (userProfile?.userRole == UserRole.ADMIN) {
+            // Admin/Manager: show online members (excluding self) to the left of the search icon
+            val isAdminOrManager = userProfile?.userRole == UserRole.ADMIN || userProfile?.userRole == UserRole.MANAGER
+            // Filter out current user from online members
+            val otherOnlineMembers = onlineMembers.filter { it.id != userProfile?.id }
+            
+            if (isAdminOrManager && otherOnlineMembers.isNotEmpty()) {
                 Row(
-                    modifier = Modifier.padding(end = 8.dp),
+                    modifier = Modifier.padding(end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy((-6).dp) // Overlap avatars slightly
                 ) {
-                    // Show up to 5 small avatars
-                    onlineMembers.take(5).forEach { member ->
+                    // Show up to 4 small avatars with online indicator
+                    otherOnlineMembers.take(4).forEach { member ->
                         Box(
-                            modifier = Modifier.size(32.dp),
+                            modifier = Modifier.size(34.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (!member.photoUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = member.photoUrl,
-                                    contentDescription = member.name ?: "Online user",
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
+                            // Avatar with border for circle effect
+                            Surface(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .border(
+                                        width = 2.dp,
+                                        color = MaterialTheme.colorScheme.surface,
+                                        shape = CircleShape
+                                    ),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                if (!member.photoUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = member.photoUrl,
+                                        contentDescription = member.name ?: "Online user",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
                                         Text(
-                                            text = member.name?.firstOrNull()?.toString() ?: "?",
-                                            style = MaterialTheme.typography.labelSmall
+                                            text = member.name?.firstOrNull()?.uppercase() ?: "?",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     }
                                 }
                             }
+                            
+                            // Green online indicator dot
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .size(10.dp)
+                                    .offset(x = 0.dp, y = 0.dp)
+                                    .border(
+                                        width = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.surface,
+                                        shape = CircleShape
+                                    ),
+                                shape = CircleShape,
+                                color = Color(0xFF22C55E) // Green
+                            ) {
+                                // Empty - just a green dot
+                            }
                         }
                     }
 
-                    // Small overflow dot if more
-                    if (onlineMembers.size > 5) {
-                        Text("+${onlineMembers.size - 5}", style = MaterialTheme.typography.labelSmall)
+                    // Show count if more than 4
+                    if (otherOnlineMembers.size > 4) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .border(
+                                    width = 2.dp,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "+${otherOnlineMembers.size - 4}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }

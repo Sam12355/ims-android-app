@@ -378,15 +378,26 @@ fun AuthenticatedApp(
     }
 
     // When the app resumes (foreground), refresh the profile to pick up remote changes.
+    // Also handle user-away/user-back for online presence
     val lifecycle = (context as? ComponentActivity)?.lifecycle
     DisposableEffect(lifecycle) {
         if (lifecycle == null) {
             onDispose { }
         } else {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    android.util.Log.d("AuthenticatedApp", "Lifecycle resumed — refreshing profile")
-                    onResumeRefresh()
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> {
+                        android.util.Log.d("AuthenticatedApp", "Lifecycle resumed — refreshing profile")
+                        onResumeRefresh()
+                        // Notify server user is back (active)
+                        socketIOService.emitUserBack()
+                    }
+                    Lifecycle.Event.ON_PAUSE -> {
+                        // Notify server user is away (app backgrounded)
+                        android.util.Log.d("AuthenticatedApp", "Lifecycle paused — user away")
+                        socketIOService.emitUserAway()
+                    }
+                    else -> { /* ignore other events */ }
                 }
             }
 
@@ -513,7 +524,8 @@ fun AuthenticatedApp(
                         moveoutRepository = moveoutRepository,
                         inventoryRepository = inventoryRepository,
                         icaDeliveryRepository = icaDeliveryRepository,
-                        calendarRepository = calendarRepository
+                        calendarRepository = calendarRepository,
+                        socketIOService = socketIOService
                     )
                 }
                 

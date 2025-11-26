@@ -98,6 +98,10 @@ class FCMService : FirebaseMessagingService() {
     ) {
         Log.d(TAG, "🔔 Showing notification: $title - $message")
         val notificationService = NotificationService(this)
+        // Record dedupe id so Socket.IO won't duplicate this notification
+        val dedupeId = com.ims.android.service.NotificationDeduper.makeId(notificationId, title, message)
+        com.ims.android.service.NotificationDeduper.record(dedupeId)
+
         notificationService.showNotification(title, message, type, notificationId)
     }
     

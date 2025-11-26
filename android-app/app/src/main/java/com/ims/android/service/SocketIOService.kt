@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import com.ims.android.data.model.OnlineMember
+import com.ims.android.data.model.UserOnlineEvent
+import com.ims.android.ui.toast.UserOnlineToastManager
 import java.net.URISyntaxException
 
 class SocketIOService(private val context: Context) {
@@ -21,8 +23,12 @@ class SocketIOService(private val context: Context) {
     private val _onlineMembers = MutableStateFlow<List<OnlineMember>>(emptyList())
     val onlineMembers: StateFlow<List<OnlineMember>> = _onlineMembers
     
+    // State flow for user online events (when someone comes online)
+    private val _userOnlineEvent = MutableStateFlow<UserOnlineEvent?>(null)
+    val userOnlineEvent: StateFlow<UserOnlineEvent?> = _userOnlineEvent
+    
     companion object {
-        private const val SOCKET_URL = "https://ims-sy.vercel.app"
+        private const val SOCKET_URL = "https://stock-nexus-84-main-2-1.onrender.com"
         private const val TAG = "SocketIOService"
     }
     
@@ -109,17 +115,30 @@ class SocketIOService(private val context: Context) {
                     else -> "[Socket.IO] Stock Nexus"
                 }
                 
-                val notificationId = data.optString("id", null)
-                
-                // Show push notification
-                notificationService.showNotification(
-                    title = title,
-                    message = message,
-                    type = type,
-                    notificationId = notificationId
-                )
-                
-                android.util.Log.d(TAG, "✅ Showed notification: $title - $message")
+                // Prefer server-provided notification id keys
+                val notificationId = when {
+                    data.has("notification_id") -> data.optString("notification_id", null)
+                    data.has("id") -> data.optString("id", null)
+                    else -> null
+                }
+
+                // Build dedupe id using notification id or title+message hash
+                val dedupeId = com.ims.android.service.NotificationDeduper.makeId(notificationId, title, message)
+
+                if (com.ims.android.service.NotificationDeduper.has(dedupeId)) {
+                    android.util.Log.d(TAG, "⏭ Duplicate notification received (id=$dedupeId), skipping")
+                } else {
+                    notificationService.showNotification(
+                        title = title,
+                        message = message,
+                        type = type,
+                        notificationId = notificationId
+                    )
+
+                    // record so FCM or subsequent Socket messages don't duplicate
+                    com.ims.android.service.NotificationDeduper.record(dedupeId)
+                    android.util.Log.d(TAG, "✅ Showed notification: $title - $message (dedupe=$dedupeId)")
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e(TAG, "❌ Error processing notification update", e)
@@ -131,16 +150,37 @@ class SocketIOService(private val context: Context) {
         try {
             val payload = args.firstOrNull()
             if (payload is JSONArray) {
-                val list = mutableListOf<OnlineMember>()
+                val newList = mutableListOf<OnlineMember>()
                 for (i in 0 until payload.length()) {
                     val j = payload.optJSONObject(i) ?: continue
                     val id = j.optString("id", j.optString("userId", ""))
                     val name = j.optString("name", null)
                     val photo = j.optString("photoUrl", j.optString("photo_url", null))
-                    if (id.isNotBlank()) list.add(OnlineMember(id = id, name = name, photoUrl = photo))
+                    if (id.isNotBlank()) newList.add(OnlineMember(id = id, name = name, photoUrl = photo))
                 }
-                _onlineMembers.value = list
-                android.util.Log.d(TAG, "👥 Online members updated: ${list.size}")
+                
+                // Detect NEW users who just came online (not in previous list)
+                val previousIds = _onlineMembers.value.map { it.id }.toSet()
+                val newMembers = newList.filter { it.id !in previousIds }
+                
+                // Emit event for each new user (but skip the first load when previousIds is empty)
+                if (previousIds.isNotEmpty()) {
+                    newMembers.forEach { member ->
+                        android.util.Log.d(TAG, "🟢 NEW user came online: ${member.id} (${member.name})")
+                        val event = UserOnlineEvent(
+                            userId = member.id,
+                            userName = member.name ?: "User",
+                            photoUrl = member.photoUrl,
+                            timestamp = System.currentTimeMillis()
+                        )
+                        _userOnlineEvent.value = event
+                        // also post to UI toast manager
+                        UserOnlineToastManager.post(event)
+                    }
+                }
+                
+                _onlineMembers.value = newList
+                android.util.Log.d(TAG, "👥 Online members updated: ${newList.size}")
             }
         } catch (e: Exception) {
             android.util.Log.e(TAG, "❌ Error processing online-members event", e)
@@ -159,7 +199,18 @@ class SocketIOService(private val context: Context) {
                 if (current.none { it.id == id }) {
                     current.add(0, OnlineMember(id = id, name = name, photoUrl = photo))
                     _onlineMembers.value = current
-                    android.util.Log.d(TAG, "➕ User online: $id")
+                    android.util.Log.d(TAG, "➕ User online: $id ($name)")
+                    
+                    // Emit event so dashboard can show toast
+                    val event = UserOnlineEvent(
+                        userId = id,
+                        userName = name ?: "User",
+                        photoUrl = photo,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    _userOnlineEvent.value = event
+                    // also post to UI toast manager
+                    UserOnlineToastManager.post(event)
                 }
             }
         } catch (e: Exception) {
@@ -195,5 +246,25 @@ class SocketIOService(private val context: Context) {
     fun reconnect() {
         android.util.Log.d(TAG, "🔄 Forcing Socket.IO reconnection...")
         socket?.connect()
+    }
+    
+    /**
+     * Emit user-away event when app goes to background
+     */
+    fun emitUserAway() {
+        if (isConnected && socket?.connected() == true) {
+            android.util.Log.d(TAG, "😴 Emitting user-away (app backgrounded)")
+            socket?.emit("user-away")
+        }
+    }
+    
+    /**
+     * Emit user-back event when app comes to foreground
+     */
+    fun emitUserBack() {
+        if (isConnected && socket?.connected() == true) {
+            android.util.Log.d(TAG, "👋 Emitting user-back (app foregrounded)")
+            socket?.emit("user-back")
+        }
     }
 }

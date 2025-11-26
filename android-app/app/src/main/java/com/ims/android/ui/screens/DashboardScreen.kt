@@ -31,11 +31,13 @@ import com.ims.android.data.repository.InventoryRepository
 import com.ims.android.data.repository.MoveoutRepository
 import com.ims.android.data.repository.ICADeliveryRepository
 import com.ims.android.data.repository.CalendarRepository
+import com.ims.android.service.SocketIOService
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import com.ims.android.ui.toast.UserOnlineToastHost
 
 @Composable
 fun DashboardScreen(
@@ -43,7 +45,8 @@ fun DashboardScreen(
     moveoutRepository: MoveoutRepository,
     inventoryRepository: InventoryRepository,
     icaDeliveryRepository: ICADeliveryRepository,
-    calendarRepository: CalendarRepository
+    calendarRepository: CalendarRepository,
+    socketIOService: SocketIOService
 ) {
     // State management - using remember for complex objects
     var dashboardStats by remember { mutableStateOf<DashboardStats?>(null) }
@@ -747,6 +750,13 @@ fun DashboardScreen(
                 )
             }
         }
+    )
+
+    // User online compact toast (bottom overlay)
+    UserOnlineToastHost(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 64.dp)
     )
     }
 }
