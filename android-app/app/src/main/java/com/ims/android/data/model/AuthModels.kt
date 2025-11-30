@@ -13,6 +13,7 @@ data class SignUpRequest(
     val email: String,
     val password: String,
     val name: String,
+    @kotlinx.serialization.EncodeDefault
     val role: String = "staff",
     val branchId: String? = null
 )

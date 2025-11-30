@@ -38,6 +38,9 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import com.ims.android.ui.toast.UserOnlineToastHost
+import com.ims.android.ui.screens.auth.PendingAccessScreen
+import com.ims.android.data.repository.EnhancedAuthRepository
+import com.ims.android.data.api.ApiClient
 
 @Composable
 fun DashboardScreen(
@@ -46,7 +49,12 @@ fun DashboardScreen(
     inventoryRepository: InventoryRepository,
     icaDeliveryRepository: ICADeliveryRepository,
     calendarRepository: CalendarRepository,
-    socketIOService: SocketIOService
+    socketIOService: SocketIOService,
+    authRepository: EnhancedAuthRepository,
+    apiClient: ApiClient,
+    onSignOut: () -> Unit,
+    openMoveoutFromNotification: Boolean = false,
+    onMoveoutNotificationHandled: () -> Unit = {}
 ) {
     // State management - using remember for complex objects
     var dashboardStats by remember { mutableStateOf<DashboardStats?>(null) }
@@ -345,6 +353,30 @@ fun DashboardScreen(
         scope.launch {
             loadDashboardData()
         }
+    }
+    
+    // Handle opening moveout list from notification tap
+    // Watch both the flag AND moveoutLists so it triggers when data loads
+    LaunchedEffect(openMoveoutFromNotification, moveoutLists) {
+        android.util.Log.d("DashboardScreen", "📱 LaunchedEffect: openMoveout=$openMoveoutFromNotification, lists=${moveoutLists.size}")
+        if (openMoveoutFromNotification && moveoutLists.isNotEmpty()) {
+            android.util.Log.d("DashboardScreen", "📱 Opening moveout list from notification!")
+            selectedMoveoutList = moveoutLists.first()
+            onMoveoutNotificationHandled()
+        }
+    }
+    
+    // Check if user has pending access (staff role with no branch assigned)
+    if (userProfile != null && userProfile!!.role == "staff" && userProfile!!.branchId.isNullOrBlank()) {
+        PendingAccessScreen(
+            onSignOut = {
+                scope.launch {
+                    authRepository.signOut()
+                    onSignOut()
+                }
+            }
+        )
+        return
     }
     
     if (errorMessage != null && userProfile == null) {
@@ -685,6 +717,7 @@ fun DashboardScreen(
             inventoryRepository = inventoryRepository,
             moveoutRepository = moveoutRepository,
             userName = userProfile?.name ?: "Unknown",
+            apiClient = apiClient,
             onSuccess = { itemCount ->
                 // Reload moveout lists after successful generation
                 scope.launch {

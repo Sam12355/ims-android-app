@@ -49,6 +49,11 @@ data class StockAlert(
     val thresholdLevel: Int
 )
 
+// Helper function to strip HTML tags from notification messages
+private fun stripHtmlTags(text: String): String {
+    return text.replace(Regex("<[^>]*>"), "").trim()
+}
+
 @Composable
 fun NotificationsDropdown(
     user: User,
@@ -492,7 +497,7 @@ private fun NotificationItem(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = notification.message,
+                    text = stripHtmlTags(notification.message),
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(

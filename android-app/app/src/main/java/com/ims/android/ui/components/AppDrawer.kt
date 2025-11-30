@@ -163,15 +163,20 @@ fun AppDrawer(
                         },
                         selected = currentRoute == navItem.route,
                         onClick = {
-                            navController.navigate(navItem.route) {
-                                launchSingleTop = true
-                                restoreState = true
-                                // Pop up to dashboard to avoid building a large stack
-                                popUpTo("dashboard") {
-                                    saveState = true
+                            // Close drawer first to make navigation feel responsive
+                            onCloseDrawer()
+                            // Navigate with proper handling
+                            if (currentRoute != navItem.route) {
+                                navController.navigate(navItem.route) {
+                                    // Pop up to start destination to avoid building a large stack
+                                    popUpTo(AppDestinations.Dashboard) {
+                                        saveState = true
+                                        inclusive = false
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
                             }
-                            onCloseDrawer()
                         },
                         colors = androidx.compose.material3.NavigationDrawerItemDefaults.colors(
                             selectedContainerColor = Color(0xFF2D3748),
@@ -211,14 +216,17 @@ fun AppDrawer(
                     },
                     selected = currentRoute == AppDestinations.Settings,
                     onClick = {
-                        navController.navigate(AppDestinations.Settings) {
-                            launchSingleTop = true
-                            restoreState = true
-                            popUpTo("dashboard") {
-                                saveState = true
+                        onCloseDrawer()
+                        if (currentRoute != AppDestinations.Settings) {
+                            navController.navigate(AppDestinations.Settings) {
+                                popUpTo(AppDestinations.Dashboard) {
+                                    saveState = true
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         }
-                        onCloseDrawer()
                     },
                     colors = androidx.compose.material3.NavigationDrawerItemDefaults.colors(
                         selectedContainerColor = Color(0xFF2D3748),

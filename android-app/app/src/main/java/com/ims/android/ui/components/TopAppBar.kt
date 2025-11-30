@@ -3,6 +3,7 @@ package com.ims.android.ui.components
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ims.android.data.model.Profile
 import com.ims.android.data.model.UserRole
 import com.ims.android.data.model.OnlineMember
@@ -31,8 +33,16 @@ fun TopAppBar(
     notificationCount: Int = 0,
     isDarkTheme: Boolean = true
     ,
-    onlineMembers: List<OnlineMember> = emptyList()
+    onlineMembers: List<OnlineMember> = emptyList(),
+    onInboxClick: () -> Unit = {},
+    onAvatarClick: (OnlineMember) -> Unit = {},
+    unreadMessagesCount: Int = 0
 ) {
+    // Debug logging for online members
+    androidx.compose.runtime.LaunchedEffect(onlineMembers) {
+        android.util.Log.d("TopAppBar", "👥 Online members received: ${onlineMembers.size} - $onlineMembers")
+    }
+    
     CenterAlignedTopAppBar(
         title = {
             // Empty title - no page name displayed
@@ -46,121 +56,140 @@ fun TopAppBar(
             }
         },
         actions = {
-            // Admin/Manager: show online members (excluding self) to the left of the search icon
-            val isAdminOrManager = userProfile?.userRole == UserRole.ADMIN || userProfile?.userRole == UserRole.MANAGER
-            // Filter out current user from online members
-            val otherOnlineMembers = onlineMembers.filter { it.id != userProfile?.id }
-            
-            if (isAdminOrManager && otherOnlineMembers.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.padding(end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy((-6).dp) // Overlap avatars slightly
-                ) {
-                    // Show up to 4 small avatars with online indicator
-                    otherOnlineMembers.take(4).forEach { member ->
-                        Box(
-                            modifier = Modifier.size(34.dp),
-                            contentAlignment = Alignment.Center
+            // Always show envelope icon first, then stacked online member avatars
+            Row(
+                modifier = Modifier.padding(end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Envelope icon - always visible with unread badge
+                Box {
+                    IconButton(onClick = onInboxClick) {
+                        Icon(
+                            imageVector = Icons.Default.MailOutline,
+                            contentDescription = "Inbox"
+                        )
+                    }
+                    if (unreadMessagesCount > 0) {
+                        Badge(
+                            containerColor = Color(0xFFE6002A),
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = (-2).dp, y = 6.dp)
                         ) {
-                            // Avatar with border for circle effect
+                            Text(
+                                text = if (unreadMessagesCount > 99) "99+" else unreadMessagesCount.toString(),
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                }
+                
+                // Stacked online member avatars (if any)
+                if (onlineMembers.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier,
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy((-12).dp) // More overlap
+                    ) {
+                        onlineMembers.take(4).forEach { member ->
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clickable { onAvatarClick(member) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .border(
+                                            width = 2.dp,
+                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = CircleShape
+                                        ),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    if (!member.photoUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = member.photoUrl,
+                                            contentDescription = member.name ?: "Online user",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            Text(
+                                                text = member.name?.firstOrNull()?.uppercase() ?: "?",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                }
+                                // Green online indicator
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(10.dp)
+                                        .offset(x = 0.dp, y = 0.dp)
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.surface,
+                                            shape = CircleShape
+                                        ),
+                                    shape = CircleShape,
+                                    color = Color(0xFF22C55E)
+                                ) {}
+                            }
+                        }
+                        // Show +N indicator if more than 4 members
+                        if (onlineMembers.size > 4) {
                             Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
                                 modifier = Modifier
                                     .size(28.dp)
                                     .border(
                                         width = 2.dp,
                                         color = MaterialTheme.colorScheme.surface,
                                         shape = CircleShape
-                                    ),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                if (!member.photoUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = member.photoUrl,
-                                        contentDescription = member.name ?: "Online user",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape),
-                                        contentScale = ContentScale.Crop
                                     )
-                                } else {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Text(
-                                            text = member.name?.firstOrNull()?.uppercase() ?: "?",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                            }
-                            
-                            // Green online indicator dot
-                            Surface(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .size(10.dp)
-                                    .offset(x = 0.dp, y = 0.dp)
-                                    .border(
-                                        width = 1.5.dp,
-                                        color = MaterialTheme.colorScheme.surface,
-                                        shape = CircleShape
-                                    ),
-                                shape = CircleShape,
-                                color = Color(0xFF22C55E) // Green
                             ) {
-                                // Empty - just a green dot
-                            }
-                        }
-                    }
-
-                    // Show count if more than 4
-                    if (otherOnlineMembers.size > 4) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier
-                                .size(28.dp)
-                                .border(
-                                    width = 2.dp,
-                                    color = MaterialTheme.colorScheme.surface,
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "+${otherOnlineMembers.size - 4}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "+${onlineMembers.size - 4}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            // Search icon
+            // Always show search, theme toggle, and notifications icons
             IconButton(onClick = onSearchClick) {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Search"
                 )
             }
-            
-            // Theme toggle - Sun/Moon icon
             IconButton(onClick = onThemeToggle) {
                 Icon(
                     imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
                     contentDescription = if (isDarkTheme) "Switch to Light Mode" else "Switch to Dark Mode",
-                    tint = if (isDarkTheme) Color(0xFFFFA500) else MaterialTheme.colorScheme.onSurface // Orange sun in dark mode
+                    tint = if (isDarkTheme) Color(0xFFFFA500) else MaterialTheme.colorScheme.onSurface
                 )
             }
-            
-            // Notifications with badge
             Box {
                 IconButton(onClick = onNotificationsClick) {
                     Icon(

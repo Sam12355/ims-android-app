@@ -42,6 +42,19 @@ class StockNexusApplication : Application() {
                         
                         if (result.isSuccess) {
                             Log.d("StockNexus", "✅ FCM token successfully sent to backend")
+                                    // Also register this device in the backend devices table so server
+                                    // can target/exclude per-device pushes. This is tolerant if
+                                    // user is not yet authenticated (registerDevice will fail silently).
+                                    try {
+                                        val reg = apiClient.registerDevice(token)
+                                        if (reg.isSuccess) {
+                                            Log.d("StockNexus", "✅ Device registered with backend devices table")
+                                        } else {
+                                            Log.d("StockNexus", "⚠️ Device registration returned: ${reg.exceptionOrNull()?.message}")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("StockNexus", "⚠️ Error attempting device register", e)
+                                    }
                         } else {
                             Log.e("StockNexus", "❌ Failed to send FCM token to backend: ${result.exceptionOrNull()?.message}")
                         }

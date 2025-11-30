@@ -347,10 +347,35 @@ class CalendarRepository(private val apiClient: ApiClient) {
 }
 
 class StaffRepository(private val apiClient: ApiClient) {
-    
+
     suspend fun getStaff(): Result<List<Profile>> {
-        // TODO: Implement staff fetching
-        return Result.failure(Exception("Not implemented"))
+        return try {
+            val result = apiClient.getStaff()
+            result.map { staffMembers ->
+                staffMembers.map { staffMember ->
+                    Profile(
+                        id = staffMember.id,
+                        userId = staffMember.user_id,
+                        name = staffMember.name,
+                        email = staffMember.email,
+                        phone = staffMember.phone,
+                        photoUrl = staffMember.photo_url,
+                        position = staffMember.position,
+                        role = staffMember.role,
+                        branchId = staffMember.branch_id,
+                        regionId = staffMember.region_id,
+                        districtId = staffMember.district_id,
+                        districtName = staffMember.district_name,
+                        lastAccess = staffMember.last_access,
+                        accessCount = staffMember.access_count,
+                        createdAt = staffMember.created_at ?: "",
+                        updatedAt = staffMember.updated_at ?: staffMember.created_at ?: ""
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
     
     suspend fun createStaff(request: CreateStaffRequest): Result<Profile> {

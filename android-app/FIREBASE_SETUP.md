@@ -41,6 +41,7 @@
 ## Step 6: Share with Backend Team
 
 Send your backend team:
+
 - **Server Key** (from step 5)
 - **Sender ID** (from step 5)
 
@@ -49,6 +50,7 @@ They need to update their notification sending code to use FCM instead of creati
 ## Verification
 
 After placing `google-services.json` in the correct location:
+
 1. Run `./gradlew assembleDebug`
 2. If build succeeds, Firebase is configured correctly!
 3. Install the app and check logs for FCM token
@@ -56,6 +58,7 @@ After placing `google-services.json` in the correct location:
 ## What Happens Next?
 
 Once `google-services.json` is in place:
+
 - The app will automatically get an FCM token
 - This token will be sent to your backend
 - Backend can use it to send instant push notifications
@@ -64,13 +67,16 @@ Once `google-services.json` is in place:
 ## Troubleshooting
 
 **Build error "google-services.json not found":**
+
 - Make sure file is in `app/` folder, not `android-app/` folder
 - Check file name is exactly `google-services.json` (all lowercase)
 
 **Firebase project already exists:**
+
 - You can use an existing Firebase project
 - Just add a new Android app to it
 
 **Package name mismatch:**
+
 - Package name MUST be `com.stocknexus.android`
 - If different, update in Firebase Console or change app's package name

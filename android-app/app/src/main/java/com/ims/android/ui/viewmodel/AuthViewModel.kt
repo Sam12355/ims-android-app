@@ -17,7 +17,7 @@ class AuthViewModel(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
     
-    private val _currentScreen = MutableStateFlow<AuthScreen>(AuthScreen.SignIn)
+    private val _currentScreen = MutableStateFlow<AuthScreen>(AuthScreen.Splash)
     val currentScreen: StateFlow<AuthScreen> = _currentScreen.asStateFlow()
     
     private val _formState = MutableStateFlow(AuthFormState())
@@ -34,7 +34,7 @@ class AuthViewModel(
         viewModelScope.launch {
             try {
                 android.util.Log.d("AuthViewModel", "checkAuthState: Starting...")
-                val session = authRepository.getSession()
+                val session = authRepository.getSessionIfRemembered()
                 if (session != null) {
                     android.util.Log.d("AuthViewModel", "checkAuthState: Session found for user: ${session.user.email}, role: ${session.user.role}")
                     val isValid = authRepository.isTokenValid()
@@ -98,7 +98,7 @@ class AuthViewModel(
     fun signIn(email: String, password: String, rememberMe: Boolean) {
         viewModelScope.launch {
             try {
-                android.util.Log.d("AuthViewModel", "Sign in started for email: $email")
+                android.util.Log.d("AuthViewModel", "Sign in started for email: $email, rememberMe: $rememberMe")
                 _formState.value = _formState.value.copy(isLoading = true, errorMessage = null)
                 
                 val result = authRepository.signIn(
@@ -111,8 +111,8 @@ class AuthViewModel(
                 if (result.isSuccess) {
                     val authResponse = result.getOrThrow()
                     android.util.Log.d("AuthViewModel", "Sign in successful, user: ${authResponse.user.email}")
+                    _formState.value = AuthFormState() // Reset form including loading state
                     _authState.value = AuthState.Authenticated(authResponse.user)
-                    _formState.value = AuthFormState() // Reset form
                 } else {
                     val error = result.exceptionOrNull()?.message ?: "Sign in failed"
                     android.util.Log.e("AuthViewModel", "Sign in failed: $error")
@@ -216,6 +216,11 @@ class AuthViewModel(
     
     fun clearError() {
         _formState.value = _formState.value.copy(errorMessage = null)
+    }
+    
+    fun setAuthenticated(user: User) {
+        android.util.Log.d("AuthViewModel", "setAuthenticated: Setting authenticated state for user: ${user.email}")
+        _authState.value = AuthState.Authenticated(user)
     }
 }
 

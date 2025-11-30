@@ -93,6 +93,7 @@ fun EnhancedAuthScreen(
                                 onPasswordVisibilityToggle = { passwordVisible = !passwordVisible },
                                 onSignIn = { email, password, remember ->
                                     scope.launch {
+                                        android.util.Log.d("EnhancedAuthScreen", "Sign in button clicked: email=$email, remember=$remember")
                                         formState = formState.copy(isLoading = true, errorMessage = null)
                                         
                                         val result = authRepository.signIn(
@@ -103,8 +104,11 @@ fun EnhancedAuthScreen(
                                         formState = formState.copy(isLoading = false)
                                         
                                         if (result.isSuccess) {
-                                            onLoginSuccess(result.getOrThrow().user)
+                                            val user = result.getOrThrow().user
+                                            android.util.Log.d("EnhancedAuthScreen", "Sign in successful, calling onLoginSuccess for user: ${user.email}")
+                                            onLoginSuccess(user)
                                         } else {
+                                            android.util.Log.e("EnhancedAuthScreen", "Sign in failed: ${result.exceptionOrNull()?.message}")
                                             formState = formState.copy(
                                                 errorMessage = result.exceptionOrNull()?.message ?: "Sign in failed"
                                             )
@@ -126,15 +130,23 @@ fun EnhancedAuthScreen(
                                 onConfirmPasswordVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible },
                                 onSignUp = { request ->
                                     scope.launch {
+                                        android.util.Log.d("EnhancedAuthScreen", "Sign up button clicked: email=${request.email}, name=${request.name}, role=${request.role}, branchId=${request.branchId}")
                                         formState = formState.copy(isLoading = true, errorMessage = null)
                                         val result = authRepository.signUp(request)
+                                        formState = formState.copy(isLoading = false)
                                         if (result.isSuccess) {
-                                            // For demo, auto-login after signup
-                                            onLoginSuccess(result.getOrThrow().user)
+                                            val authResponse = result.getOrThrow()
+                                            val user = authResponse.user
+                                            android.util.Log.d("EnhancedAuthScreen", "Sign up successful for user: ${user.email}, role=${user.role}, branchId=${user.branchId}")
+                                            // User is auto-logged in, navigate to app
+                                            // Dashboard will handle showing PendingAccess if needed
+                                            onLoginSuccess(user)
                                         } else {
+                                            val errorMsg = result.exceptionOrNull()?.message ?: "Unknown error occurred"
+                                            android.util.Log.e("EnhancedAuthScreen", "Sign up failed with error: $errorMsg")
+                                            result.exceptionOrNull()?.printStackTrace()
                                             formState = formState.copy(
-                                                isLoading = false,
-                                                errorMessage = result.exceptionOrNull()?.message ?: "Sign up failed"
+                                                errorMessage = errorMsg
                                             )
                                         }
                                     }

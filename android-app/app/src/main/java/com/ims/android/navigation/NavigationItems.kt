@@ -138,8 +138,8 @@ val navigationItems = listOf(
         title = "Moveout Lists",
         route = AppDestinations.MoveoutList,
         icon = Icons.Default.List,
-        // Staff should NOT see the moveout list — keep it for managers and admins
-        allowedRoles = listOf(UserRole.ADMIN, UserRole.MANAGER, UserRole.ASSISTANT_MANAGER),
+        // Only Admin and Assistant Manager see Moveout Lists in sidebar (Managers use Dashboard)
+        allowedRoles = listOf(UserRole.ADMIN, UserRole.ASSISTANT_MANAGER),
         description = "View and manage moveout lists"
     )
 )

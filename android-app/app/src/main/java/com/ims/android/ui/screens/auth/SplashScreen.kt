@@ -31,8 +31,8 @@ fun SplashScreen(
             // Show splash for a minimum time
             delay(2000)
             
-            // Check if user is already logged in
-            val session = authRepository.getSession()
+            // Check if user is already logged in (only if Remember Me was checked)
+            val session = authRepository.getSessionIfRemembered()
             if (session != null) {
                 // Validate token
                 val isValid = authRepository.isTokenValid()
@@ -45,7 +45,7 @@ fun SplashScreen(
                     onNavigateToAuth()
                 }
             } else {
-                // No session, go to auth
+                // No session or Remember Me not checked, go to auth
                 onNavigateToAuth()
             }
         }

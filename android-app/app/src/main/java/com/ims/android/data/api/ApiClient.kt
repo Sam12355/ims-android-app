@@ -7,9 +7,12 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ims.android.data.model.*
+import com.ims.android.service.MorningReminderWorker
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.annotations.SupabaseInternal
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.*
@@ -47,6 +50,10 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import com.google.firebase.messaging.FirebaseMessaging
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -61,7 +68,10 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 @OptIn(SupabaseInternal::class)
 class ApiClient private constructor(private val context: Context) {
     
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { 
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
     private val client = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)  // Increased for Render cold start
         .readTimeout(60, TimeUnit.SECONDS)     // Increased for Render cold start
@@ -79,6 +89,28 @@ class ApiClient private constructor(private val context: Context) {
     ) {
         install(Postgrest)
         httpEngine = Android.create()
+    }
+    
+    // Custom serializer to handle read_at being either boolean false or string timestamp
+    object BooleanOrStringSerializer : kotlinx.serialization.KSerializer<String?> {
+        override val descriptor = kotlinx.serialization.descriptors.PrimitiveSerialDescriptor("BooleanOrString", kotlinx.serialization.descriptors.PrimitiveKind.STRING)
+        
+        override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): String? {
+            return try {
+                val element = (decoder as? kotlinx.serialization.json.JsonDecoder)?.decodeJsonElement()
+                when {
+                    element is kotlinx.serialization.json.JsonPrimitive && element.isString -> element.content
+                    element is kotlinx.serialization.json.JsonPrimitive && !element.isString -> null // boolean false or null
+                    else -> null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: String?) {
+            if (value != null) encoder.encodeString(value) else encoder.encodeNull()
+        }
     }
     
     @Serializable
@@ -144,6 +176,41 @@ class ApiClient private constructor(private val context: Context) {
         private val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token")
         private val USER_DATA_KEY = stringPreferencesKey("user_data")
         private val PROFILE_DATA_KEY = stringPreferencesKey("profile_data")
+        private val MESSAGE_READ_CACHE_KEY = stringPreferencesKey("message_read_cache")
+        private val MESSAGE_DELIVERED_CACHE_KEY = stringPreferencesKey("message_delivered_cache")
+    }
+
+    // Message status cache helpers (persist map<messageId, timestampString>)
+    suspend fun saveMessageReadCache(readMap: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            prefs[MESSAGE_READ_CACHE_KEY] = json.encodeToString(readMap)
+        }
+    }
+
+    suspend fun saveMessageDeliveredCache(deliveredMap: Map<String, String>) {
+        context.dataStore.edit { prefs ->
+            prefs[MESSAGE_DELIVERED_CACHE_KEY] = json.encodeToString(deliveredMap)
+        }
+    }
+
+    suspend fun loadMessageReadCache(): Map<String, String> = withContext(Dispatchers.IO) {
+        try {
+            val mapStr = context.dataStore.data.first()[MESSAGE_READ_CACHE_KEY] ?: "{}"
+            return@withContext json.decodeFromString(mapStr)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error loading message read cache", e)
+            return@withContext emptyMap()
+        }
+    }
+
+    suspend fun loadMessageDeliveredCache(): Map<String, String> = withContext(Dispatchers.IO) {
+        try {
+            val mapStr = context.dataStore.data.first()[MESSAGE_DELIVERED_CACHE_KEY] ?: "{}"
+            return@withContext json.decodeFromString(mapStr)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error loading message delivered cache", e)
+            return@withContext emptyMap()
+        }
     }
     
     // Demo authentication methods
@@ -217,8 +284,105 @@ class ApiClient private constructor(private val context: Context) {
         }
     }
     
-    suspend fun signup(request: SignUpRequest): Result<AuthResponse> {
-        return login(request.email, request.password) // Use same mock logic for demo
+    suspend fun signup(request: SignUpRequest): Result<AuthResponse> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            android.util.Log.d(TAG, "signup called for: ${request.email}")
+            
+            val requestBody = json.encodeToString(SignUpRequest.serializer(), request)
+            android.util.Log.d(TAG, "Sign up request body: $requestBody")
+            
+            val httpRequest = Request.Builder()
+                .url("$baseUrl/auth/register")
+                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            android.util.Log.d(TAG, "Making HTTP request to: $baseUrl/auth/register")
+            
+            val response = try {
+                client.newCall(httpRequest).execute()
+            } catch (e: java.net.UnknownHostException) {
+                android.util.Log.e(TAG, "UnknownHostException: ${e.message}", e)
+                throw Exception("Cannot connect to server. Please check your internet connection.")
+            } catch (e: java.net.SocketTimeoutException) {
+                android.util.Log.e(TAG, "SocketTimeoutException: ${e.message}", e)
+                throw Exception("Connection timeout. Please try again.")
+            } catch (e: java.io.IOException) {
+                android.util.Log.e(TAG, "IOException: ${e.message}", e)
+                throw Exception("Network error: ${e.message ?: "Unable to connect to server"}")
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Unexpected exception during HTTP call: ${e.javaClass.name} - ${e.message}", e)
+                throw Exception("Connection failed: ${e.javaClass.simpleName} - ${e.message ?: "Unknown network error"}")
+            }
+            
+            android.util.Log.d(TAG, "HTTP request completed, reading response body...")
+            val responseBody = response.body?.string() ?: throw Exception("Empty response from server")
+            
+            android.util.Log.d(TAG, "Sign up response code: ${response.code}")
+            android.util.Log.d(TAG, "Sign up response: $responseBody")
+            
+            if (!response.isSuccessful) {
+                // Try to parse error message from response
+                val errorMessage = try {
+                    val errorJson = json.parseToJsonElement(responseBody).jsonObject
+                    val msg = errorJson["message"]?.jsonPrimitive?.content 
+                        ?: errorJson["error"]?.jsonPrimitive?.content
+                        ?: "HTTP ${response.code}: ${response.message}"
+                    android.util.Log.e(TAG, "Sign up failed with error from backend: $msg")
+                    msg
+                } catch (parseError: Exception) {
+                    android.util.Log.e(TAG, "Could not parse error response, raw body: $responseBody")
+                    "Sign up failed (HTTP ${response.code}): $responseBody"
+                }
+                throw Exception(errorMessage)
+            }
+            
+            val signupResponse = json.decodeFromString<LoginResponse>(responseBody)
+            
+            if (!signupResponse.success) {
+                throw Exception("Sign up failed: Server returned success=false")
+            }
+            
+            val userData = signupResponse.data.user
+            
+            // Create user object from backend response
+            val user = User(
+                id = userData.id,
+                email = userData.email,
+                name = userData.name,
+                role = userData.role,
+                createdAt = userData.created_at ?: System.currentTimeMillis().toString(),
+                updatedAt = userData.updated_at ?: System.currentTimeMillis().toString()
+            )
+            
+            val profile = Profile(
+                id = userData.id,
+                userId = userData.id,
+                name = userData.name,
+                email = userData.email,
+                role = userData.role,
+                branchId = userData.branch_id ?: "",
+                branchName = userData.branch_name ?: "",
+                createdAt = userData.created_at ?: System.currentTimeMillis().toString(),
+                updatedAt = userData.updated_at ?: System.currentTimeMillis().toString()
+            )
+            
+            val authResponse = AuthResponse(
+                user = user,
+                profile = profile,
+                accessToken = signupResponse.data.token,
+                refreshToken = null
+            )
+            
+            // Save auth data
+            saveAuthData(authResponse)
+            
+            Result.success(authResponse)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Sign up exception: ${e.message}")
+            android.util.Log.e(TAG, "Exception type: ${e.javaClass.simpleName}")
+            e.printStackTrace()
+            Result.failure(e)
+        }
     }
     
     suspend fun logout() {
@@ -395,6 +559,69 @@ class ApiClient private constructor(private val context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e(TAG, "❌ Error sending FCM token", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Synchronously obtain the current FCM token using the FirebaseTask callback bridge.
+     */
+    suspend fun getFCMTokenSync(): String? = withContext(Dispatchers.IO) {
+        try {
+            return@withContext suspendCancellableCoroutine { cont ->
+                FirebaseMessaging.getInstance().token
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            cont.resume(task.result)
+                        } else {
+                            cont.resumeWithException(task.exception ?: Exception("Failed to get FCM token"))
+                        }
+                    }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ getFCMTokenSync error", e)
+            null
+        }
+    }
+
+    /**
+     * Register this device with the backend devices table so server can target/exclude it.
+     */
+    suspend fun registerDevice(deviceToken: String, deviceId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val access = getAccessToken() ?: return@withContext Result.failure(Exception("Not authenticated"))
+
+            // Try to include user id if available
+            val profile = try { getCurrentProfile() } catch (e: Exception) { null }
+            val userId = profile?.id
+
+            val payloadBuilder = buildJsonObject {
+                userId?.let { put("user_id", it) }
+                deviceId?.let { put("device_id", it) }
+                put("device_token", deviceToken)
+            }
+
+            val requestBody = payloadBuilder.toString().toRequestBody("application/json".toMediaType())
+
+            val request = Request.Builder()
+                .url("$baseUrl/devices/register")
+                .header("Authorization", "Bearer $access")
+                .header("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            android.util.Log.d(TAG, "📡 POST /devices/register Response Code: ${response.code}")
+            android.util.Log.d(TAG, "📄 Response Body: $responseBody")
+
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to register device: ${response.code} - $responseBody"))
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ registerDevice error", e)
             Result.failure(e)
         }
     }
@@ -1175,6 +1402,7 @@ class ApiClient private constructor(private val context: Context) {
         val region_id: String? = null,
         val district_id: String? = null,
         val district_name: String? = null,
+        val is_active: Boolean? = true,
         val last_access: String? = null,
         val access_count: Int = 0,
         val created_at: String? = null,
@@ -1290,6 +1518,209 @@ class ApiClient private constructor(private val context: Context) {
         } catch (e: Exception) {
             android.util.Log.e(TAG, "Error marking notification as read: ${e.message}", e)
             Result.failure(e)
+        }
+    }
+    
+    @Serializable
+    private data class CreateNotificationRequest(
+        val user_id: String,
+        val type: String,
+        val message: String,
+        val is_read: Boolean = false
+    )
+    
+    suspend fun createNotification(userId: String, type: String, message: String): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            android.util.Log.d(TAG, "📢 Creating notification for user: $userId, type: $type")
+            
+            val notificationData = CreateNotificationRequest(
+                user_id = userId,
+                type = type,
+                message = message,
+                is_read = false
+            )
+            
+            val jsonBody = json.encodeToString(CreateNotificationRequest.serializer(), notificationData)
+            val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("$supabaseUrl/rest/v1/notifications")
+                .header("apikey", serviceRoleKey)
+                .header("Authorization", "Bearer $serviceRoleKey")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "return=minimal")
+                .post(requestBody)
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            
+            android.util.Log.d(TAG, "📢 Create notification response: ${response.code} - $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to create notification: ${response.code} - $responseBody")
+            }
+            
+            android.util.Log.d(TAG, "📢 ✅ Notification created successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error creating notification: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Broadcasts a notification to ALL staff members.
+     * Creates a database record for each user AND triggers FCM push notifications.
+     * If created after 10:00 AM Swedish time, schedules a reminder for next day at 10:00 AM.
+     */
+    suspend fun broadcastNotificationToAllStaff(
+        type: String, 
+        title: String, 
+        message: String,
+        creatorName: String = "System"
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            android.util.Log.d(TAG, "📢 Broadcasting notification to all staff: type=$type, creator=$creatorName")
+            
+            // Get current Swedish time (Europe/Stockholm)
+            val stockholmZone = java.time.ZoneId.of("Europe/Stockholm")
+            val nowInStockholm = java.time.ZonedDateTime.now(stockholmZone)
+            val dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy 'at' HH:mm")
+            val creationDateStr = nowInStockholm.format(dateFormatter)
+            
+            // Enhanced message with creator and date
+            val enhancedMessage = "$message\nCreated by: $creatorName\nDate: $creationDateStr"
+            
+            // Send FCM broadcast via backend API
+            val fcmPayload = buildJsonObject {
+                put("type", type)
+                put("title", title)
+                put("message", enhancedMessage)
+                put("broadcast", true)
+            }
+            
+            android.util.Log.d(TAG, "📢 Sending FCM broadcast to backend: $fcmPayload")
+            
+            val fcmRequest = Request.Builder()
+                .url("$baseUrl/notifications/broadcast")
+                .header("Authorization", "Bearer ${getAccessToken()}")
+                .header("Content-Type", "application/json")
+                .post(fcmPayload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val fcmResponse = client.newCall(fcmRequest).execute()
+            val fcmResponseBody = fcmResponse.body?.string() ?: ""
+            android.util.Log.d(TAG, "📢 FCM broadcast response: ${fcmResponse.code} - $fcmResponseBody")
+            
+            if (fcmResponse.isSuccessful) {
+                android.util.Log.d(TAG, "📢 ✅ FCM broadcast sent successfully!")
+            } else {
+                android.util.Log.w(TAG, "📢 Backend broadcast failed: ${fcmResponse.code} - $fcmResponseBody")
+            }
+            
+            // Schedule morning reminder if created after 10:00 AM Swedish time
+            val tenAM = 10
+            if (nowInStockholm.hour >= tenAM) {
+                // Get staff for morning reminder scheduling
+                val staffResult = getStaff()
+                val staffList = staffResult.getOrNull() ?: emptyList()
+                
+                if (staffList.isNotEmpty()) {
+                    val nextMorning = nowInStockholm
+                        .plusDays(1)
+                        .withHour(tenAM)
+                        .withMinute(0)
+                        .withSecond(0)
+                    
+                    val morningTitle = "📋 Reminder: $title"
+                    val morningMessage = "$message\nCreated by: $creatorName on $creationDateStr"
+                    
+                    scheduleMorningFCMReminder(
+                        type = type,
+                        title = morningTitle,
+                        message = morningMessage,
+                        scheduledTime = nextMorning.toInstant().toEpochMilli(),
+                        staffIds = staffList.map { it.id }
+                    )
+                    android.util.Log.d(TAG, "📢 Scheduled morning reminder for ${nextMorning}")
+                }
+            } else {
+                android.util.Log.d(TAG, "📢 Created before 10 AM - no morning reminder scheduled")
+            }
+            
+            Result.success(Unit)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error broadcasting notification: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * Schedules a morning FCM reminder using WorkManager
+     */
+    private fun scheduleMorningFCMReminder(
+        type: String,
+        title: String,
+        message: String,
+        scheduledTime: Long,
+        staffIds: List<String>
+    ) {
+        try {
+            val delay = scheduledTime - System.currentTimeMillis()
+            if (delay <= 0) {
+                android.util.Log.w(TAG, "Scheduled time is in the past, skipping")
+                return
+            }
+            
+            val inputData = androidx.work.Data.Builder()
+                .putString("type", type)
+                .putString("title", title)
+                .putString("message", message)
+                .putStringArray("staff_ids", staffIds.toTypedArray())
+                .build()
+            
+            val workRequest = androidx.work.OneTimeWorkRequestBuilder<MorningReminderWorker>()
+                .setInitialDelay(delay, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .setInputData(inputData)
+                .addTag("morning_reminder")
+                .build()
+            
+            androidx.work.WorkManager.getInstance(context)
+                .enqueue(workRequest)
+            
+            android.util.Log.d(TAG, "📢 Morning reminder scheduled with delay: ${delay / 1000 / 60} minutes")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to schedule morning reminder: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Triggers FCM notifications via Supabase Edge Function (if available)
+     */
+    private suspend fun triggerFCMViaEdgeFunction(type: String, title: String, message: String, userIds: List<String>) {
+        try {
+            val userIdsJson = userIds.joinToString(",") { "\"$it\"" }
+            val payload = """
+                {
+                    "type": "$type",
+                    "title": "$title", 
+                    "message": "$message",
+                    "user_ids": [$userIdsJson]
+                }
+            """.trimIndent()
+            
+            val request = Request.Builder()
+                .url("$supabaseUrl/functions/v1/send-fcm-notification")
+                .header("Authorization", "Bearer $serviceRoleKey")
+                .header("Content-Type", "application/json")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            android.util.Log.d(TAG, "📢 Edge function FCM response: ${response.code} - ${response.body?.string()}")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "📢 Edge function FCM failed: ${e.message}")
         }
     }
     
@@ -2185,6 +2616,35 @@ class ApiClient private constructor(private val context: Context) {
             Result.failure(e)
         }
     }
+    
+    suspend fun activateStaff(staffId: String): Result<Boolean> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            val requestBody = json.encodeToString(
+                kotlinx.serialization.json.buildJsonObject {
+                    put("is_active", true)
+                }
+            )
+            
+            val request = Request.Builder()
+                .url("$baseUrl/users/staff/$staffId")
+                .header("Authorization", "Bearer $token")
+                .put(requestBody.toRequestBody("application/json".toMediaType()))
+                .build()
+            
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                throw Exception("Failed to activate staff: ${response.code}")
+            }
+            
+            Result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error activating staff", e)
+            Result.failure(e)
+        }
+    }
 
     // Region & District Functions
     suspend fun getRegions(): Result<List<Region>> = withContext(Dispatchers.IO) {
@@ -2272,4 +2732,517 @@ class ApiClient private constructor(private val context: Context) {
         is Iterable<*> -> JsonArray(value.map { mapToJsonElement(it) })
         else -> JsonPrimitive(value.toString())
     }
+
+    // Messaging API - TEMPORARY LOCAL STORAGE UNTIL BACKEND SUPPORTS MESSAGES
+    suspend fun sendMessage(receiverId: String, content: String): Result<Message> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+
+            val currentUser = getCurrentProfile()
+            val senderId = currentUser?.id ?: throw Exception("No current user")
+
+            // Try calling backend API first
+            // Include sender_device_token so server can exclude this device from FCM
+            val senderDeviceToken = try { getFCMTokenSync() } catch (e: Exception) { null }
+
+            val payload = buildJsonObject {
+                put("sender_id", senderId)
+                put("receiver_id", receiverId)
+                put("content", content)
+                senderDeviceToken?.let { put("sender_device_token", it) }
+            }
+
+            android.util.Log.d(TAG, "🌐 POST $baseUrl/messages/send - body: $payload")
+
+            val request = Request.Builder()
+                .url("$baseUrl/messages/send")
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .post(payload.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            android.util.Log.d(TAG, "📡 POST /messages/send Response Code: ${response.code}")
+            android.util.Log.d(TAG, "📄 Response Body: $responseBody")
+
+            // If this endpoint doesn't exist yet return fallback to local storage
+            if (response.code == 404) {
+                android.util.Log.w(TAG, "⚠️ MESSAGES: Backend /messages/send not found (404) - falling back to local storage")
+                // fall through to local store below
+            } else if (!response.isSuccessful) {
+                throw Exception("Failed to send message: ${response.code} - $responseBody")
+            } else {
+                // Try to parse response and return message object
+                try {
+                    val parsed = json.parseToJsonElement(responseBody)
+                    // Common shapes: { success: true, data: { message: { ... } } } or { message: { ... } } or direct object
+                    val msgJson = when {
+                        parsed.jsonObject["data"]?.jsonObject?.get("message") != null -> parsed.jsonObject["data"]!!.jsonObject["message"]!!.jsonObject
+                        parsed.jsonObject["message"] != null -> parsed.jsonObject["message"]!!.jsonObject
+                        parsed.jsonObject["data"] != null && parsed.jsonObject["data"]!!.jsonObject.isNotEmpty() -> parsed.jsonObject["data"]!!.jsonObject
+                        else -> parsed.jsonObject
+                    }
+
+                    val id = msgJson["id"]?.jsonPrimitive?.contentOrNull ?: java.util.UUID.randomUUID().toString()
+                    val sId = msgJson["sender_id"]?.jsonPrimitive?.contentOrNull ?: senderId
+                    val rId = msgJson["receiver_id"]?.jsonPrimitive?.contentOrNull ?: receiverId
+                    val c = msgJson["content"]?.jsonPrimitive?.contentOrNull ?: content
+                    val sentAt = msgJson["sent_at"]?.jsonPrimitive?.contentOrNull ?: msgJson["created_at"]?.jsonPrimitive?.contentOrNull ?: java.time.Instant.now().toString()
+                    val readAt = msgJson["read_at"]?.jsonPrimitive?.contentOrNull
+                    val fcmMessageId = msgJson["fcm_message_id"]?.jsonPrimitive?.contentOrNull
+
+                    val message = Message(
+                        id = id,
+                        senderId = sId,
+                        receiverId = rId,
+                        content = c,
+                        sentAt = sentAt,
+                        readAt = readAt,
+                        fcmMessageId = fcmMessageId
+                    )
+
+                    android.util.Log.d(TAG, "✅ Message saved via backend: ${message.id}")
+                    return@withContext Result.success(message)
+                } catch (e: Exception) {
+                    android.util.Log.e(TAG, "Failed to parse message response, falling back to local store", e)
+                    // fall through to local storage fallback
+                }
+            }
+
+            // Fallback: store message locally if backend not available or parsing failed
+            android.util.Log.w(TAG, "⚠️ MESSAGES: Using temporary local storage - falling back because backend unavailable or response could not be parsed")
+
+            val message = Message(
+                id = java.util.UUID.randomUUID().toString(),
+                senderId = senderId,
+                receiverId = receiverId,
+                content = content,
+                sentAt = java.time.Instant.now().toString(),
+                readAt = null,
+                fcmMessageId = null
+            )
+
+            // Store locally in DataStore
+            val messagesKey = stringPreferencesKey("local_messages")
+            val existingMessagesJson = context.dataStore.data.first()[messagesKey] ?: "[]"
+            val existingMessages = json.decodeFromString<List<Message>>(existingMessagesJson)
+            val updatedMessages = existingMessages + message
+            val updatedMessagesJson = json.encodeToString(updatedMessages)
+
+            context.dataStore.edit { preferences ->
+                preferences[messagesKey] = updatedMessagesJson
+            }
+
+            android.util.Log.d(TAG, "✅ Message stored locally: ${message.id}")
+            Result.success(message)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error sending or storing message", e)
+            Result.failure(e)
+        }
+    }
+
+    // TEMPORARY: Get locally stored messages
+    suspend fun getLocalMessages(): List<Message> = withContext(Dispatchers.IO) {
+        try {
+            val messagesKey = stringPreferencesKey("local_messages")
+            val messagesJson = context.dataStore.data.first()[messagesKey] ?: "[]"
+            json.decodeFromString(messagesJson)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error reading local messages", e)
+            emptyList()
+        }
+    }
+
+    // TEMPORARY: Store thread locally
+    suspend fun storeLocalThread(thread: Thread) = withContext(Dispatchers.IO) {
+        try {
+            val threadsKey = stringPreferencesKey("local_threads")
+            val existingThreadsJson = context.dataStore.data.first()[threadsKey] ?: "[]"
+            val existingThreads = json.decodeFromString<List<Thread>>(existingThreadsJson)
+            
+            // Remove existing thread with same participants (regardless of order)
+            val updatedThreads = existingThreads.filterNot { 
+                (it.user1Id == thread.user1Id && it.user2Id == thread.user2Id) ||
+                (it.user1Id == thread.user2Id && it.user2Id == thread.user1Id)
+            } + thread
+            val updatedThreadsJson = json.encodeToString(updatedThreads)
+            
+            context.dataStore.edit { preferences ->
+                preferences[threadsKey] = updatedThreadsJson
+            }
+            
+            android.util.Log.d(TAG, "✅ Thread stored locally: ${thread.id} (${thread.user1Id} <-> ${thread.user2Id})")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error storing thread locally", e)
+        }
+    }
+
+    // TEMPORARY: Get locally stored threads
+    suspend fun getLocalThreads(): List<Thread> = withContext(Dispatchers.IO) {
+        try {
+            val threadsKey = stringPreferencesKey("local_threads")
+            val threadsJson = context.dataStore.data.first()[threadsKey] ?: "[]"
+            json.decodeFromString(threadsJson)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error reading local threads", e)
+            emptyList()
+        }
+    }
+
+    // Fetch messages for a conversation from backend
+    suspend fun getThreadMessages(userId: String): Result<List<Message>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            val currentUser = getCurrentProfile()
+            val currentUserId = currentUser?.id ?: throw Exception("No current user")
+
+            android.util.Log.d(TAG, "🌐 GET $baseUrl/messages/thread?user1=$currentUserId&user2=$userId")
+
+            val request = Request.Builder()
+                .url("$baseUrl/messages/thread?user1=$currentUserId&user2=$userId")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            android.util.Log.d(TAG, "📡 GET /messages/thread Response Code: ${response.code}")
+
+            if (!response.isSuccessful) {
+                android.util.Log.w(TAG, "⚠️ Failed to fetch messages from backend: ${response.code}")
+                // Fallback to local storage
+                val localMessages = getLocalMessages().filter {
+                    (it.senderId == currentUserId && it.receiverId == userId) ||
+                    (it.senderId == userId && it.receiverId == currentUserId)
+                }
+                return@withContext Result.success(localMessages)
+            }
+
+            val parsed = json.parseToJsonElement(responseBody)
+            val messagesArray = when {
+                parsed.jsonObject["data"]?.jsonArray != null -> parsed.jsonObject["data"]!!.jsonArray
+                parsed.jsonObject["messages"]?.jsonArray != null -> parsed.jsonObject["messages"]!!.jsonArray
+                parsed is JsonArray -> parsed
+                else -> JsonArray(emptyList())
+            }
+
+            val messages = messagesArray.map { msgElement ->
+                val msgJson = msgElement.jsonObject
+                // If the backend includes `is_read` boolean rather than a timestamp,
+                // treat that as a read marker (fallback) but use the message's created_at
+                // as a stable timestamp (instead of Instant.now which would change every poll)
+                val readAtStr = msgJson["read_at"]?.jsonPrimitive?.contentOrNull
+                val isReadBool = msgJson["is_read"]?.jsonPrimitive?.booleanOrNull ?: false
+                val createdAtStr = msgJson["created_at"]?.jsonPrimitive?.contentOrNull
+                    ?: msgJson["sent_at"]?.jsonPrimitive?.contentOrNull
+                val readAtFinal = readAtStr ?: if (isReadBool) createdAtStr else null
+
+                Message(
+                    id = msgJson["id"]?.jsonPrimitive?.contentOrNull ?: java.util.UUID.randomUUID().toString(),
+                    senderId = msgJson["sender_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                    receiverId = msgJson["receiver_id"]?.jsonPrimitive?.contentOrNull ?: "",
+                    content = msgJson["content"]?.jsonPrimitive?.contentOrNull ?: "",
+                    sentAt = msgJson["sent_at"]?.jsonPrimitive?.contentOrNull 
+                        ?: msgJson["created_at"]?.jsonPrimitive?.contentOrNull 
+                        ?: java.time.Instant.now().toString(),
+                    readAt = readAtFinal,
+                    fcmMessageId = msgJson["fcm_message_id"]?.jsonPrimitive?.contentOrNull
+                )
+            }
+
+            android.util.Log.d(TAG, "✅ Loaded ${messages.size} messages from backend")
+            Result.success(messages)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Error fetching thread messages", e)
+            // Fallback to local storage
+            try {
+                val currentUser = getCurrentProfile()
+                val currentUserId = currentUser?.id ?: ""
+                val localMessages = getLocalMessages().filter {
+                    (it.senderId == currentUserId && it.receiverId == userId) ||
+                    (it.senderId == userId && it.receiverId == currentUserId)
+                }
+                Result.success(localMessages)
+            } catch (localError: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
+    // Fetch ALL messages for the current user from backend API
+    suspend fun getAllUserMessages(): Result<List<Message>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val currentUser = getCurrentProfile()
+            val currentUserId = currentUser?.id ?: throw Exception("No current user")
+            val token = getAccessToken() ?: throw Exception("No auth token")
+
+            android.util.Log.d(TAG, "📡 Calling backend API GET /messages for user $currentUserId")
+
+            // Call backend API to get messages
+            val request = okhttp3.Request.Builder()
+                .url("$baseUrl/messages")
+                .get()
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Content-Type", "application/json")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response from backend")
+            
+            android.util.Log.d(TAG, "Backend response: $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Backend API error: ${response.code} - $responseBody")
+            }
+            
+            // Parse response - backend returns either array directly or {success, data: array}
+            val userMessages = try {
+                // Try parsing as direct array first
+                json.decodeFromString<List<SupabaseMessage>>(responseBody)
+            } catch (e: Exception) {
+                // If that fails, try parsing as wrapped response
+                val wrappedResponse = json.decodeFromString<JsonObject>(responseBody)
+                val dataArray = wrappedResponse["data"]?.jsonArray ?: wrappedResponse["messages"]?.jsonArray
+                    ?: throw Exception("Could not find messages in response")
+                json.decodeFromString<List<SupabaseMessage>>(dataArray.toString())
+            }
+
+            android.util.Log.d(TAG, "✅ Loaded ${userMessages.size} messages from backend API")
+            
+            // Log details of found messages
+            userMessages.forEachIndexed { index, msg ->
+                android.util.Log.d(TAG, "  Message: ${msg.id.substring(0, 8)}... from ${msg.sender_id.substring(0, 8)} to ${msg.receiver_id.substring(0, 8)}")
+            }
+
+            // Convert Supabase messages to app messages
+            val messages = userMessages.map { supaMsg ->
+                Message(
+                    id = supaMsg.id,
+                    senderId = supaMsg.sender_id,
+                    receiverId = supaMsg.receiver_id,
+                    content = supaMsg.content,
+                    sentAt = supaMsg.created_at,
+                    deliveredAt = supaMsg.delivered_at,
+                    readAt = supaMsg.read_at,
+                    fcmMessageId = supaMsg.fcm_message_id
+                )
+            }.sortedByDescending { it.sentAt }
+
+            Result.success(messages)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error fetching messages from backend API: ${e.message}", e)
+            e.printStackTrace()
+            // Return empty list instead of falling back to local storage
+            Result.success(emptyList())
+        }
+    }
+    
+    @Serializable
+    data class SupabaseMessage(
+        val id: String,
+        val sender_id: String,
+        val receiver_id: String,
+        val content: String,
+        val created_at: String,
+        @Serializable(with = BooleanOrStringSerializer::class)
+        val delivered_at: String? = null,
+        @Serializable(with = BooleanOrStringSerializer::class)
+        val read_at: String? = null,
+        @SerialName("is_read")
+        val is_read: Boolean? = false,
+        val thread_id: String? = null,
+        val fcm_message_id: String? = null,
+        val sender_name: String? = null,
+        val sender_photo: String? = null,
+        val receiver_name: String? = null,
+        val receiver_photo: String? = null
+    )
+
+    // Fetch ALL threads for the current user from backend API
+    suspend fun getAllUserThreads(): Result<List<Thread>> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val currentUser = getCurrentProfile()
+            val currentUserId = currentUser?.id ?: throw Exception("No current user")
+            val token = getAccessToken() ?: throw Exception("No auth token")
+
+            android.util.Log.d(TAG, "📡 Calling backend API GET /threads for user $currentUserId")
+
+            // Call backend API to get threads
+            val request = okhttp3.Request.Builder()
+                .url("$baseUrl/threads")
+                .get()
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Content-Type", "application/json")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw Exception("Empty response from backend")
+            
+            android.util.Log.d(TAG, "Backend response: $responseBody")
+            
+            if (!response.isSuccessful) {
+                throw Exception("Backend API error: ${response.code} - $responseBody")
+            }
+            
+            // Parse response - backend returns either array directly or {success, data: array}
+            val allThreads = try {
+                // Try parsing as direct array first
+                json.decodeFromString<List<SupabaseThread>>(responseBody)
+            } catch (e: Exception) {
+                // If that fails, try parsing as wrapped response
+                val wrappedResponse = json.decodeFromString<JsonObject>(responseBody)
+                val dataArray = wrappedResponse["data"]?.jsonArray ?: wrappedResponse["threads"]?.jsonArray
+                    ?: throw Exception("Could not find threads in response")
+                json.decodeFromString<List<SupabaseThread>>(dataArray.toString())
+            }
+
+            android.util.Log.d(TAG, "✅ Loaded ${allThreads.size} threads from backend API")
+
+            // Convert Supabase threads to app threads
+            val threads = allThreads.map { supaThread ->
+                Thread(
+                    id = supaThread.id,
+                    user1Id = supaThread.user1_id,
+                    user2Id = supaThread.user2_id,
+                    lastMessageId = supaThread.last_message_id,
+                    updatedAt = supaThread.updated_at
+                )
+            }
+
+            Result.success(threads)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error fetching threads from backend API: ${e.message}", e)
+            // Return empty list instead of falling back to local storage
+            Result.success(emptyList())
+        }
+    }
+    
+    @Serializable
+    data class SupabaseThread(
+        val id: String,
+        val user1_id: String,
+        val user2_id: String,
+        val last_message_id: String? = null,
+        val updated_at: String,
+        val created_at: String? = null
+    )
+
+    // Fetch user profile by ID (for getting user names)
+    suspend fun getUserProfile(userId: String): Result<Profile> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val token = getAccessToken() ?: throw Exception("Not authenticated")
+            
+            android.util.Log.d(TAG, "🔍 Fetching user profile for: $userId")
+
+            // Try primary endpoint first
+            val request = Request.Builder()
+                .url("$baseUrl/profile/$userId")
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            
+            android.util.Log.d(TAG, "📡 Profile API response code: ${response.code}")
+
+            if (!response.isSuccessful) {
+                android.util.Log.w(TAG, "⚠️ Profile endpoint failed, trying users endpoint")
+                // Fallback to /users endpoint
+                val userRequest = Request.Builder()
+                    .url("$baseUrl/users/$userId")
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+                    
+                val userResponse = client.newCall(userRequest).execute()
+                val userResponseBody = userResponse.body?.string() ?: ""
+                
+                android.util.Log.d(TAG, "📡 Users API response code: ${userResponse.code}")
+                
+                if (!userResponse.isSuccessful) {
+                    throw Exception("Failed to fetch user profile from both endpoints: profile=${response.code}, users=${userResponse.code}")
+                }
+                
+                val parsed = json.parseToJsonElement(userResponseBody)
+                val userJson = parsed.jsonObject["data"]?.jsonObject ?: parsed.jsonObject["user"]?.jsonObject ?: parsed.jsonObject
+
+                val profile = Profile(
+                    id = userJson["id"]?.jsonPrimitive?.contentOrNull ?: userId,
+                    name = userJson["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown User",
+                    email = userJson["email"]?.jsonPrimitive?.contentOrNull ?: "",
+                    role = userJson["role"]?.jsonPrimitive?.contentOrNull ?: "",
+                    photoUrl = userJson["photo_url"]?.jsonPrimitive?.contentOrNull,
+                    branchId = userJson["branch_id"]?.jsonPrimitive?.contentOrNull,
+                    branchName = userJson["branch_name"]?.jsonPrimitive?.contentOrNull,
+                    districtName = userJson["district_name"]?.jsonPrimitive?.contentOrNull,
+                    regionName = userJson["region_name"]?.jsonPrimitive?.contentOrNull,
+                    createdAt = userJson["created_at"]?.jsonPrimitive?.contentOrNull ?: "",
+                    updatedAt = userJson["updated_at"]?.jsonPrimitive?.contentOrNull ?: "",
+                    accessCount = userJson["access_count"]?.jsonPrimitive?.intOrNull ?: 0
+                )
+                
+                android.util.Log.d(TAG, "✅ Loaded profile: ${profile.name}")
+                return@withContext Result.success(profile)
+            }
+
+            val parsed = json.parseToJsonElement(responseBody)
+            val userJson = parsed.jsonObject["data"]?.jsonObject ?: parsed.jsonObject["user"]?.jsonObject ?: parsed.jsonObject
+
+            val profile = Profile(
+                id = userJson["id"]?.jsonPrimitive?.contentOrNull ?: userId,
+                name = userJson["name"]?.jsonPrimitive?.contentOrNull ?: "Unknown User",
+                email = userJson["email"]?.jsonPrimitive?.contentOrNull ?: "",
+                role = userJson["role"]?.jsonPrimitive?.contentOrNull ?: "",
+                photoUrl = userJson["photo_url"]?.jsonPrimitive?.contentOrNull,
+                branchId = userJson["branch_id"]?.jsonPrimitive?.contentOrNull,
+                branchName = userJson["branch_name"]?.jsonPrimitive?.contentOrNull,
+                districtName = userJson["district_name"]?.jsonPrimitive?.contentOrNull,
+                regionName = userJson["region_name"]?.jsonPrimitive?.contentOrNull,
+                createdAt = userJson["created_at"]?.jsonPrimitive?.contentOrNull ?: "",
+                updatedAt = userJson["updated_at"]?.jsonPrimitive?.contentOrNull ?: "",
+                accessCount = userJson["access_count"]?.jsonPrimitive?.intOrNull ?: 0
+            )
+            
+            android.util.Log.d(TAG, "✅ Loaded profile: ${profile.name}")
+            Result.success(profile)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "❌ Error fetching user profile for $userId: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    @Serializable
+    data class Thread(
+        val id: String,
+        @SerialName("user1_id")
+        val user1Id: String,
+        @SerialName("user2_id")
+        val user2Id: String,
+        @SerialName("last_message_id")
+        val lastMessageId: String? = null,
+        @SerialName("updated_at")
+        val updatedAt: String
+    )
+
+    @Serializable
+    data class Message(
+        val id: String,
+        @SerialName("sender_id")
+        val senderId: String,
+        @SerialName("receiver_id")
+        val receiverId: String,
+        val content: String,
+        @SerialName("sent_at")
+        val sentAt: String,
+        @SerialName("delivered_at")
+        val deliveredAt: String? = null,
+        @SerialName("read_at")
+        val readAt: String? = null,
+        @SerialName("fcm_message_id")
+        val fcmMessageId: String? = null
+    )
 }

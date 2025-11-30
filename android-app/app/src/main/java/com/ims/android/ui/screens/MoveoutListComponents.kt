@@ -26,6 +26,26 @@ import com.ims.android.data.model.MoveoutItem
 import java.text.SimpleDateFormat
 import java.util.*
 
+// Helper function to parse ISO date string and format it
+private fun formatIsoDate(isoDate: String?, outputPattern: String = "MMM dd, yyyy"): String {
+    if (isoDate.isNullOrBlank()) {
+        return SimpleDateFormat(outputPattern, Locale.getDefault()).format(Date())
+    }
+    return try {
+        // Try parsing ISO 8601 format (e.g., "2025-01-15T10:30:00.000Z" or "2025-01-15T10:30:00Z")
+        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+        isoFormat.timeZone = TimeZone.getTimeZone("UTC")
+        val cleanDate = isoDate.replace("Z", "").substringBefore(".")
+        val date = isoFormat.parse(cleanDate)
+        val outputFormat = SimpleDateFormat(outputPattern, Locale.getDefault())
+        outputFormat.format(date ?: Date())
+    } catch (e: Exception) {
+        android.util.Log.e("MoveoutListComponents", "Error parsing date: $isoDate", e)
+        // Fallback to current date
+        SimpleDateFormat(outputPattern, Locale.getDefault()).format(Date())
+    }
+}
+
 @Composable
 fun MoveoutListItemSimple(
     moveoutList: MoveoutList,
@@ -49,10 +69,8 @@ fun MoveoutListItemSimple(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
-                val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-                val dateMillis = moveoutList.createdAt?.toLongOrNull() ?: System.currentTimeMillis()
                 Text(
-                    text = dateFormat.format(Date(dateMillis)),
+                    text = formatIsoDate(moveoutList.createdAt),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -125,10 +143,8 @@ fun MoveoutItemsDialog(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-                        val dateMillis = moveoutList.createdAt?.toLongOrNull() ?: System.currentTimeMillis()
                         Text(
-                            text = dateFormat.format(Date(dateMillis)),
+                            text = formatIsoDate(moveoutList.createdAt),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -294,10 +310,8 @@ fun CompletedMoveoutItemsDialog(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
-                        val dateMillis = moveoutList.createdAt?.toLongOrNull() ?: System.currentTimeMillis()
                         Text(
-                            text = dateFormat.format(Date(dateMillis)),
+                            text = formatIsoDate(moveoutList.createdAt),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -367,13 +381,7 @@ fun CompletedMoveoutItemsDialog(
                                     val processedAt = item.processedAt ?: item.completedAt
                                     
                                     val dateTimeText = if (processedAt != null) {
-                                        try {
-                                            val dateFormat = SimpleDateFormat("MM/dd/yyyy 'at' hh:mm:ss a", Locale.getDefault())
-                                            val date = Date(processedAt.toLongOrNull() ?: System.currentTimeMillis())
-                                            dateFormat.format(date)
-                                        } catch (e: Exception) {
-                                            processedAt
-                                        }
+                                        formatIsoDate(processedAt, "MM/dd/yyyy 'at' hh:mm:ss a")
                                     } else {
                                         "Unknown date"
                                     }

@@ -47,6 +47,7 @@ fun GenerateMoveoutDialog(
     inventoryRepository: InventoryRepository,
     moveoutRepository: MoveoutRepository,
     userName: String,
+    apiClient: ApiClient,
     onSuccess: (itemCount: Int) -> Unit
 ) {
     var availableStock by remember { mutableStateOf<List<ApiClient.StockItem>>(emptyList()) }
@@ -363,6 +364,23 @@ fun GenerateMoveoutDialog(
                                             }
                                         )
                                         moveoutRepository.createMoveoutList(req).onSuccess {
+                                            android.util.Log.d("GenerateMoveout", "✅ Moveout list created successfully")
+                                            
+                                            // Send FCM notification via backend broadcast endpoint
+                                            try {
+                                                val itemsText = tableItems.joinToString(", ") { "${it.itemName} × ${it.requestingQuantity}" }
+                                                apiClient.broadcastNotificationToAllStaff(
+                                                    type = "moveout",
+                                                    title = "📦 New Moveout Request",
+                                                    message = itemsText,
+                                                    creatorName = userName
+                                                )
+                                                android.util.Log.d("GenerateMoveout", "📢 FCM broadcast sent for moveout by $userName")
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("GenerateMoveout", "Failed to send FCM broadcast: ${e.message}")
+                                                // Don't fail the whole operation if notification fails
+                                            }
+                                            
                                             onDismiss()
                                             onSuccess(tableItems.size)
                                         }.onFailure {

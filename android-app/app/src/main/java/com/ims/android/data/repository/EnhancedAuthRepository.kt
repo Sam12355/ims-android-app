@@ -28,21 +28,39 @@ class EnhancedAuthRepository(
         private val USER_KEY = stringPreferencesKey("user_info")
         private val TOKEN_KEY = stringPreferencesKey("auth_token")
         private val REMEMBER_EMAIL_KEY = stringPreferencesKey("remember_email")
+        private val REMEMBER_SESSION_KEY = stringPreferencesKey("remember_session")
         private val NOTIFICATION_SETTINGS_KEY = stringPreferencesKey("notification_settings")
     }
     
     // Session management
-    suspend fun saveSession(sessionInfo: SessionInfo) {
+    suspend fun saveSession(sessionInfo: SessionInfo, rememberSession: Boolean = false) {
         dataStore.edit { preferences ->
             preferences[SESSION_KEY] = Json.encodeToString(sessionInfo)
             preferences[USER_KEY] = Json.encodeToString(sessionInfo.user)
             preferences[TOKEN_KEY] = sessionInfo.accessToken
+            // Always set the remember flag based on user choice
+            // true = auto-login on restart, false = require login on restart
+            preferences[REMEMBER_SESSION_KEY] = if (rememberSession) "true" else "false"
         }
         apiClient.setToken(sessionInfo.accessToken)
     }
     
     suspend fun getSession(): SessionInfo? {
         return try {
+            val sessionJson = dataStore.data.first()[SESSION_KEY]
+            sessionJson?.let { Json.decodeFromString<SessionInfo>(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    suspend fun getSessionIfRemembered(): SessionInfo? {
+        return try {
+            val rememberSession = dataStore.data.first()[REMEMBER_SESSION_KEY]
+            if (rememberSession != "true") {
+                // User didn't check Remember Me, don't restore session on app restart
+                return null
+            }
             val sessionJson = dataStore.data.first()[SESSION_KEY]
             sessionJson?.let { Json.decodeFromString<SessionInfo>(it) }
         } catch (e: Exception) {
@@ -76,6 +94,7 @@ class EnhancedAuthRepository(
             preferences.remove(USER_KEY)
             preferences.remove(TOKEN_KEY)
             preferences.remove(REMEMBER_EMAIL_KEY) // Clear remembered email on logout
+            preferences.remove(REMEMBER_SESSION_KEY) // Clear remember session flag
         }
         apiClient.setToken(null)
     }
@@ -110,7 +129,7 @@ class EnhancedAuthRepository(
                 refreshToken = response.refreshToken,
                 user = response.user
             )
-            saveSession(sessionInfo)
+            saveSession(sessionInfo, rememberEmail)
             
             // Save email if remember me is checked
             if (rememberEmail) {
@@ -131,7 +150,7 @@ class EnhancedAuthRepository(
         return try {
             val response = apiClient.signUp(request)
             
-            // For demo purposes, auto-login after signup
+            // Save session after signup (user is logged in automatically)
             val sessionInfo = SessionInfo(
                 accessToken = response.accessToken,
                 refreshToken = response.refreshToken,

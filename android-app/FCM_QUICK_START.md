@@ -18,7 +18,7 @@ FCM (Firebase Cloud Messaging) has been integrated into the Stock Nexus Android 
 
 ### Step 2: Add Android App (3 minutes)
 
-1. Click the **Android icon** 
+1. Click the **Android icon**
 2. Android package name: **`com.stocknexus.android`** ⚠️ MUST match exactly!
 3. Click **"Register app"**
 4. **Download `google-services.json`**
@@ -39,11 +39,13 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Check logs for FCM token:
+
 ```bash
 adb logcat | grep FCM
 ```
 
 You should see:
+
 ```
 🔑 FCM Token: eXaMpLe_ToKeN_hErE...
 ```
@@ -55,6 +57,7 @@ Your mobile app is now FCM-ready!
 ## 📤 Backend Integration
 
 Send the **Server Key** to your backend team along with `BACKEND_FCM_INTEGRATION.md` which contains:
+
 - How to send push notifications
 - API endpoints needed
 - Code examples (Node.js & Python)
@@ -69,10 +72,12 @@ Send the **Server Key** to your backend team along with `BACKEND_FCM_INTEGRATION
 ## 🐛 Troubleshooting
 
 **Build fails with "google-services.json not found":**
+
 - Make sure file is in `app/` folder (same level as `app/build.gradle`)
 - File name must be exactly `google-services.json` (all lowercase)
 
 **Package name mismatch:**
+
 - Package name in Firebase MUST be `com.stocknexus.android`
 
 ## 📚 Full Documentation
@@ -83,6 +88,7 @@ Send the **Server Key** to your backend team along with `BACKEND_FCM_INTEGRATION
 ## 🔄 Current Setup
 
 The app currently has **both FCM and 1-minute polling**:
+
 - FCM = instant notifications (when backend is ready)
 - Polling = fallback (works now, but 60-second delay)
 

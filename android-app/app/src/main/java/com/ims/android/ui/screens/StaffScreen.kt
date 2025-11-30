@@ -237,6 +237,54 @@ class StaffViewModel(apiClient: ApiClient) : ViewModel() {
         }
     }
     
+    fun activateStaff(staffId: String) {
+        viewModelScope.launch {
+            isSubmitting = true
+            errorMessage = null
+            
+            try {
+                apiClient.activateStaff(staffId).fold(
+                    onSuccess = {
+                        successMessage = "Staff member activated successfully"
+                        loadData() // Reload to show updated status
+                    },
+                    onFailure = {
+                        errorMessage = "Failed to activate staff: ${it.message}"
+                    }
+                )
+            } finally {
+                isSubmitting = false
+            }
+        }
+    }
+    
+    fun activateStaffWithBranch(staffId: String, branchId: String) {
+        viewModelScope.launch {
+            isSubmitting = true
+            errorMessage = null
+            
+            try {
+                // First update the branch_id, then activate
+                val staffData = mutableMapOf<String, Any?>(
+                    "branch_id" to branchId,
+                    "is_active" to true
+                )
+                
+                apiClient.updateStaff(staffId, staffData).fold(
+                    onSuccess = {
+                        successMessage = "Staff member activated and assigned to branch successfully"
+                        loadData() // Reload to show updated status
+                    },
+                    onFailure = {
+                        errorMessage = "Failed to activate staff: ${it.message}"
+                    }
+                )
+            } finally {
+                isSubmitting = false
+            }
+        }
+    }
+    
     fun clearMessages() {
         errorMessage = null
         successMessage = null
@@ -256,6 +304,8 @@ fun StaffScreen() {
     var selectedStaff by remember { mutableStateOf<ApiClient.StaffMember?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var staffToDelete by remember { mutableStateOf<ApiClient.StaffMember?>(null) }
+    var showActivateDialog by remember { mutableStateOf(false) }
+    var staffToActivate by remember { mutableStateOf<ApiClient.StaffMember?>(null) }
     
     // Show success message as snackbar
     LaunchedEffect(viewModel.successMessage) {
@@ -497,6 +547,10 @@ fun StaffScreen() {
                                     onDelete = {
                                         staffToDelete = it
                                         showDeleteDialog = true
+                                    },
+                                    onActivate = {
+                                        staffToActivate = it
+                                        showActivateDialog = true
                                     }
                                 )
                             }
@@ -576,6 +630,141 @@ fun StaffScreen() {
             }
         )
     }
+    
+    // Activate Staff Dialog with Branch Selection
+    if (showActivateDialog && staffToActivate != null) {
+        ActivateStaffDialog(
+            staff = staffToActivate!!,
+            branches = viewModel.branches,
+            currentUserBranchId = viewModel.currentUser?.branchId,
+            onDismiss = {
+                showActivateDialog = false
+                staffToActivate = null
+            },
+            onConfirm = { branchId ->
+                viewModel.activateStaffWithBranch(staffToActivate!!.id, branchId)
+                showActivateDialog = false
+                staffToActivate = null
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ActivateStaffDialog(
+    staff: ApiClient.StaffMember,
+    branches: List<Branch>,
+    currentUserBranchId: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var selectedBranchId by remember { mutableStateOf(currentUserBranchId ?: "") }
+    var showBranchDropdown by remember { mutableStateOf(false) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Column {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(32.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Activate Staff Member")
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Activate ${staff.name}?",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "Email: ${staff.email}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Branch Selection
+                Text(
+                    text = "Assign Branch:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                
+                ExposedDropdownMenuBox(
+                    expanded = showBranchDropdown,
+                    onExpandedChange = { showBranchDropdown = it }
+                ) {
+                    OutlinedTextField(
+                        value = branches.find { it.id == selectedBranchId }?.name ?: "Select Branch",
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        trailingIcon = {
+                            Icon(
+                                if (showBranchDropdown) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                contentDescription = null
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFE6002A),
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                    
+                    ExposedDropdownMenu(
+                        expanded = showBranchDropdown,
+                        onDismissRequest = { showBranchDropdown = false }
+                    ) {
+                        branches.forEach { branch ->
+                            DropdownMenuItem(
+                                text = { Text(branch.name) },
+                                onClick = {
+                                    selectedBranchId = branch.id
+                                    showBranchDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { 
+                    if (selectedBranchId.isNotEmpty()) {
+                        onConfirm(selectedBranchId)
+                    }
+                },
+                enabled = selectedBranchId.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Activate")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -583,7 +772,8 @@ fun StaffMemberCard(
     staff: ApiClient.StaffMember,
     currentUserId: String?,
     onEdit: (ApiClient.StaffMember) -> Unit,
-    onDelete: (ApiClient.StaffMember) -> Unit
+    onDelete: (ApiClient.StaffMember) -> Unit,
+    onActivate: (ApiClient.StaffMember) -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -677,6 +867,21 @@ fun StaffMemberCard(
                             fontWeight = FontWeight.Medium
                         )
                     }
+                    
+                    // Active/Inactive Badge
+                    val isActive = staff.is_active ?: true
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = if (isActive) Color(0xFF4CAF50).copy(alpha = 0.15f) else Color(0xFFF44336).copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = if (isActive) "Active" else "Inactive",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isActive) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
                 
                 // Access Info
@@ -703,29 +908,59 @@ fun StaffMemberCard(
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                IconButton(
-                    onClick = { onEdit(staff) },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = "Edit",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+                val isActive = staff.is_active ?: true
+                
+                // Show Activate button for inactive staff
+                if (!isActive) {
+                    Button(
+                        onClick = { onActivate(staff) },
+                        modifier = Modifier.height(32.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                            contentColor = Color(0xFF4CAF50)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Activate",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "Activate",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
                 
-                if (staff.id != currentUserId) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     IconButton(
-                        onClick = { onDelete(staff) },
+                        onClick = { onEdit(staff) },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
+                            Icons.Default.Edit,
+                            contentDescription = "Edit",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
+                    }
+                    
+                    if (staff.id != currentUserId) {
+                        IconButton(
+                            onClick = { onDelete(staff) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }

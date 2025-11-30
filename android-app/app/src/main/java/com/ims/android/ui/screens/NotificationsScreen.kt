@@ -1,6 +1,9 @@
 package com.ims.android.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
@@ -17,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +39,11 @@ data class NotificationItem(
     val isRead: Boolean
 )
 
+// Helper function to strip HTML tags from notification messages
+fun stripHtmlTags(text: String): String {
+    return text.replace(Regex("<[^>]*>"), "").trim()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(
@@ -42,10 +51,13 @@ fun NotificationsScreen(
     apiClient: ApiClient,
     onBack: () -> Unit
 ) {
-    var notifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    var unreadNotifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
+    var readNotifications by remember { mutableStateOf<List<NotificationItem>>(emptyList()) }
     var dismissingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isLoading by remember { mutableStateOf(true) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var unreadExpanded by remember { mutableStateOf(true) }
+    var readExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val notificationRepository = remember { NotificationRepository(apiClient) }
     
@@ -53,18 +65,20 @@ fun NotificationsScreen(
         try {
             val result = notificationRepository.getNotifications()
             result.onSuccess { data ->
-                notifications = data
-                    .filter { !it.isRead } // Only show unread notifications
-                    .map { notif ->
-                        NotificationItem(
-                            id = notif.id,
-                            type = notif.type ?: "general",
-                            message = notif.message ?: "No message",
-                            createdAt = notif.createdAt ?: "",
-                            isRead = notif.isRead ?: false
-                        )
-                    }.sortedByDescending { it.createdAt }
-                android.util.Log.d("NotificationsScreen", "Loaded ${notifications.size} notifications")
+                val allNotifications = data.map { notif ->
+                    NotificationItem(
+                        id = notif.id,
+                        type = notif.type ?: "general",
+                        message = notif.message ?: "No message",
+                        createdAt = notif.createdAt ?: "",
+                        isRead = notif.isRead ?: false
+                    )
+                }.sortedByDescending { it.createdAt }
+                
+                unreadNotifications = allNotifications.filter { !it.isRead }
+                readNotifications = allNotifications.filter { it.isRead }
+                
+                android.util.Log.d("NotificationsScreen", "Loaded ${unreadNotifications.size} unread, ${readNotifications.size} read notifications")
             }
         } catch (e: Exception) {
             android.util.Log.e("NotificationsScreen", "Error loading notifications", e)
@@ -86,154 +100,234 @@ fun NotificationsScreen(
         loadNotifications()
     }
     
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Notifications") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, "Back")
-                    }
-                },
-                actions = {
-                    // Refresh button
-                    IconButton(onClick = { refreshNotifications() }) {
-                        Icon(Icons.Default.Refresh, "Refresh")
-                    }
-                    // Mark all as read
-                    if (notifications.isNotEmpty()) {
-                        IconButton(onClick = {
-                            scope.launch {
-                                notificationRepository.markAllNotificationsAsRead()
-                                loadNotifications()
-                            }
-                        }) {
-                            Icon(Icons.Default.DoneAll, "Mark all as read")
-                        }
-                    }
-                },
-                modifier = Modifier.height(56.dp)
-            )
-        },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            when {
-                isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+            unreadNotifications.isEmpty() && readNotifications.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No notifications",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "All caught up!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
-                notifications.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Notifications,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No unread notifications",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "All caught up!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Unread notifications accordion
+                    item {
+                        NotificationAccordion(
+                            title = "Unread Notifications",
+                            count = unreadNotifications.size,
+                            expanded = unreadExpanded,
+                            onToggle = { unreadExpanded = !unreadExpanded },
+                            isUnread = true,
+                            isRefreshing = isRefreshing
                         )
                     }
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Summary card
-                        item {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    
+                    if (unreadExpanded) {
+                        if (unreadNotifications.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No unread notifications",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                 )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                            }
+                        } else {
+                            items(
+                                items = unreadNotifications,
+                                key = { "unread_${it.id}" }
+                            ) { notification ->
+                                AnimatedVisibility(
+                                    visible = !dismissingIds.contains(notification.id),
+                                    exit = shrinkVertically() + fadeOut()
                                 ) {
-                                    Column {
-                                        Text(
-                                            text = "${notifications.size} Unread",
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            text = "Tap to dismiss",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                        )
-                                    }
-                                    if (isRefreshing) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(24.dp),
-                                            strokeWidth = 2.dp
-                                        )
-                                    }
+                                    NotificationCard(
+                                        notification = notification,
+                                        onMarkAsRead = {
+                                            scope.launch {
+                                                notificationRepository.markNotificationAsRead(notification.id)
+                                                loadNotifications()
+                                            }
+                                        },
+                                        onClick = {
+                                            dismissingIds = dismissingIds + notification.id
+                                            scope.launch {
+                                                kotlinx.coroutines.delay(300)
+                                                unreadNotifications = unreadNotifications.filter { it.id != notification.id }
+                                                dismissingIds = dismissingIds - notification.id
+                                                notificationRepository.markNotificationAsRead(notification.id)
+                                                loadNotifications()
+                                            }
+                                        }
+                                    )
                                 }
                             }
                         }
-                        
-                        // Notifications list
-                        items(
-                            items = notifications,
-                            key = { it.id }
-                        ) { notification ->
-                            AnimatedVisibility(
-                                visible = !dismissingIds.contains(notification.id),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
+                    }
+                    
+                    // Read notifications accordion
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        NotificationAccordion(
+                            title = "Read Notifications",
+                            count = readNotifications.size,
+                            expanded = readExpanded,
+                            onToggle = { readExpanded = !readExpanded },
+                            isUnread = false,
+                            isRefreshing = false
+                        )
+                    }
+                    
+                    if (readExpanded) {
+                        if (readNotifications.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No read notifications",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        } else {
+                            items(
+                                items = readNotifications,
+                                key = { "read_${it.id}" }
+                            ) { notification ->
                                 NotificationCard(
                                     notification = notification,
-                                    onMarkAsRead = {
-                                        scope.launch {
-                                            notificationRepository.markNotificationAsRead(notification.id)
-                                            loadNotifications()
-                                        }
-                                    },
-                                    onClick = {
-                                        // Add to dismissing set for animation
-                                        dismissingIds = dismissingIds + notification.id
-                                        // Remove after animation completes
-                                        scope.launch {
-                                            kotlinx.coroutines.delay(300) // Animation duration
-                                            notifications = notifications.filter { it.id != notification.id }
-                                            dismissingIds = dismissingIds - notification.id
-                                            notificationRepository.markNotificationAsRead(notification.id)
-                                        }
-                                    }
+                                    onMarkAsRead = { },
+                                    onClick = { }
                                 )
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationAccordion(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    isUnread: Boolean,
+    isRefreshing: Boolean
+) {
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "rotation"
+    )
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clickable { onToggle() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isUnread) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isUnread) Icons.Default.MarkEmailUnread else Icons.Default.MarkEmailRead,
+                    contentDescription = null,
+                    tint = if (isUnread) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Column {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isUnread) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                    Text(
+                        text = "$count notification${if (count != 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isUnread) {
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        }
+                    )
+                }
+            }
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    modifier = Modifier.rotate(rotationAngle),
+                    tint = if (isUnread) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
             }
         }
     }
@@ -264,7 +358,6 @@ fun NotificationCard(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Icon based on type
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -298,7 +391,6 @@ fun NotificationCard(
                 )
             }
             
-            // Content
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -328,7 +420,7 @@ fun NotificationCard(
                 }
                 
                 Text(
-                    text = notification.message,
+                    text = stripHtmlTags(notification.message),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 
@@ -339,7 +431,6 @@ fun NotificationCard(
                 )
             }
             
-            // Mark as read button (only if unread)
             if (!notification.isRead) {
                 IconButton(
                     onClick = onMarkAsRead,
