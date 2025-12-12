@@ -1,0 +1,658 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		/* App */
+		F01 /* StockNexusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01; };
+		F02 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02; };
+		
+		/* Models */
+		F10 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10; };
+		F11 /* Item.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11; };
+		F12 /* Organization.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12; };
+		F13 /* MoveoutList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13; };
+		F14 /* ICADelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A14; };
+		F15 /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15; };
+		F16 /* ActivityLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16; };
+		F17 /* Notification.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17; };
+		
+		/* Utilities */
+		F20 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20; };
+		F21 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21; };
+		F22 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22; };
+		
+		/* Services */
+		F30 /* NetworkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30; };
+		F31 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A31; };
+		F32 /* InventoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32; };
+		F33 /* UserService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A33; };
+		F34 /* OrganizationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34; };
+		F35 /* MoveoutListService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35; };
+		F36 /* ICADeliveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36; };
+		
+		/* ViewModels */
+		F40 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40; };
+		F41 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41; };
+		F42 /* InventoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42; };
+		F43 /* NavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43; };
+		
+		/* Views */
+		F50 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50; };
+		F51 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51; };
+		F52 /* SignUpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A52; };
+		F53 /* PendingAccessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A53; };
+		F54 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54; };
+		F55 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55; };
+		F56 /* StockOutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56; };
+		F57 /* StockInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57; };
+		F58 /* RecordStockInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58; };
+		F59 /* MoveoutListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59; };
+		F60 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60; };
+		F61 /* AdditionalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A61; };
+		F62 /* ManagementViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62; };
+		F63 /* CommonComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A63; };
+		F64 /* ItemComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64; };
+		F65 /* ICADeliveryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A65; };
+		F66 /* CalendarViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66; };
+		F67 /* ReportsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A67; };
+		F68 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68; };
+		
+		/* Resources */
+		F90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A90; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		/* Product */
+		P01 /* StockNexus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StockNexus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		
+		/* App */
+		A01 /* StockNexusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockNexusApp.swift; sourceTree = "<group>"; };
+		A02 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		
+		/* Models */
+		A10 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		A11 /* Item.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Item.swift; sourceTree = "<group>"; };
+		A12 /* Organization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Organization.swift; sourceTree = "<group>"; };
+		A13 /* MoveoutList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveoutList.swift; sourceTree = "<group>"; };
+		A14 /* ICADelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICADelivery.swift; sourceTree = "<group>"; };
+		A15 /* CalendarEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEvent.swift; sourceTree = "<group>"; };
+		A16 /* ActivityLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityLog.swift; sourceTree = "<group>"; };
+		A17 /* Notification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Notification.swift; sourceTree = "<group>"; };
+		
+		/* Utilities */
+		A20 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		A21 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		A22 /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
+		
+		/* Services */
+		A30 /* NetworkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkManager.swift; sourceTree = "<group>"; };
+		A31 /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		A32 /* InventoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryService.swift; sourceTree = "<group>"; };
+		A33 /* UserService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserService.swift; sourceTree = "<group>"; };
+		A34 /* OrganizationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrganizationService.swift; sourceTree = "<group>"; };
+		A35 /* MoveoutListService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveoutListService.swift; sourceTree = "<group>"; };
+		A36 /* ICADeliveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICADeliveryService.swift; sourceTree = "<group>"; };
+		
+		/* ViewModels */
+		A40 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
+		A41 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		A42 /* InventoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InventoryViewModel.swift; sourceTree = "<group>"; };
+		A43 /* NavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationManager.swift; sourceTree = "<group>"; };
+		
+		/* Views */
+		A50 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		A51 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		A52 /* SignUpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignUpView.swift; sourceTree = "<group>"; };
+		A53 /* PendingAccessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingAccessView.swift; sourceTree = "<group>"; };
+		A54 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		A55 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		A56 /* StockOutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockOutView.swift; sourceTree = "<group>"; };
+		A57 /* StockInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockInView.swift; sourceTree = "<group>"; };
+		A58 /* RecordStockInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordStockInView.swift; sourceTree = "<group>"; };
+		A59 /* MoveoutListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveoutListView.swift; sourceTree = "<group>"; };
+		A60 /* MoreMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreMenuView.swift; sourceTree = "<group>"; };
+		A61 /* AdditionalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdditionalViews.swift; sourceTree = "<group>"; };
+		A62 /* ManagementViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagementViews.swift; sourceTree = "<group>"; };
+		A63 /* CommonComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonComponents.swift; sourceTree = "<group>"; };
+		A64 /* ItemComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemComponents.swift; sourceTree = "<group>"; };
+		A65 /* ICADeliveryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICADeliveryViews.swift; sourceTree = "<group>"; };
+		A66 /* CalendarViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarViews.swift; sourceTree = "<group>"; };
+		A67 /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
+		A68 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		
+		/* Resources */
+		A90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A91 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		G00 = {
+			isa = PBXGroup;
+			children = (
+				G01 /* StockNexus */,
+				G02 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		G01 /* StockNexus */ = {
+			isa = PBXGroup;
+			children = (
+				G10 /* App */,
+				G11 /* Models */,
+				G12 /* Views */,
+				G13 /* ViewModels */,
+				G14 /* Services */,
+				G15 /* Utilities */,
+				G16 /* Resources */,
+			);
+			path = StockNexus;
+			sourceTree = "<group>";
+		};
+		G02 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				P01 /* StockNexus.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		G10 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A01 /* StockNexusApp.swift */,
+				A02 /* ContentView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		G11 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				A10 /* User.swift */,
+				A11 /* Item.swift */,
+				A12 /* Organization.swift */,
+				A13 /* MoveoutList.swift */,
+				A14 /* ICADelivery.swift */,
+				A15 /* CalendarEvent.swift */,
+				A16 /* ActivityLog.swift */,
+				A17 /* Notification.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		G12 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				G120 /* Auth */,
+				G121 /* Main */,
+				G122 /* Inventory */,
+				G123 /* Moveout */,
+				G124 /* More */,
+				G125 /* Components */,
+				G126 /* ICA */,
+				G127 /* Calendar */,
+				G128 /* Reports */,
+				G129 /* Settings */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		G120 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				A50 /* SplashView.swift */,
+				A51 /* SignInView.swift */,
+				A52 /* SignUpView.swift */,
+				A53 /* PendingAccessView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		G121 /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				A54 /* MainTabView.swift */,
+				A55 /* DashboardView.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		G122 /* Inventory */ = {
+			isa = PBXGroup;
+			children = (
+				A56 /* StockOutView.swift */,
+				A57 /* StockInView.swift */,
+				A58 /* RecordStockInView.swift */,
+			);
+			path = Inventory;
+			sourceTree = "<group>";
+		};
+		G123 /* Moveout */ = {
+			isa = PBXGroup;
+			children = (
+				A59 /* MoveoutListView.swift */,
+			);
+			path = Moveout;
+			sourceTree = "<group>";
+		};
+		G124 /* More */ = {
+			isa = PBXGroup;
+			children = (
+				A60 /* MoreMenuView.swift */,
+				A61 /* AdditionalViews.swift */,
+				A62 /* ManagementViews.swift */,
+			);
+			path = More;
+			sourceTree = "<group>";
+		};
+		G125 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A63 /* CommonComponents.swift */,
+				A64 /* ItemComponents.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		G126 /* ICA */ = {
+			isa = PBXGroup;
+			children = (
+				A65 /* ICADeliveryViews.swift */,
+			);
+			path = ICA;
+			sourceTree = "<group>";
+		};
+		G127 /* Calendar */ = {
+			isa = PBXGroup;
+			children = (
+				A66 /* CalendarViews.swift */,
+			);
+			path = Calendar;
+			sourceTree = "<group>";
+		};
+		G128 /* Reports */ = {
+			isa = PBXGroup;
+			children = (
+				A67 /* ReportsView.swift */,
+			);
+			path = Reports;
+			sourceTree = "<group>";
+		};
+		G129 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				A68 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		G13 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				A40 /* AuthViewModel.swift */,
+				A41 /* DashboardViewModel.swift */,
+				A42 /* InventoryViewModel.swift */,
+				A43 /* NavigationManager.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		G14 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A30 /* NetworkManager.swift */,
+				A31 /* AuthService.swift */,
+				A32 /* InventoryService.swift */,
+				A33 /* UserService.swift */,
+				A34 /* OrganizationService.swift */,
+				A35 /* MoveoutListService.swift */,
+				A36 /* ICADeliveryService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		G15 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				A20 /* Extensions.swift */,
+				A21 /* Constants.swift */,
+				A22 /* KeychainManager.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		G16 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A90 /* Assets.xcassets */,
+				A91 /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		T01 /* StockNexus */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BC01;
+			buildPhases = (
+				BP01 /* Sources */,
+				BP02 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = StockNexus;
+			productName = StockNexus;
+			productReference = P01 /* StockNexus.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		PR01 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					T01 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = BC02;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = G00;
+			productRefGroup = G02 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				T01 /* StockNexus */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BP02 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F90 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BP01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F01 /* StockNexusApp.swift in Sources */,
+				F02 /* ContentView.swift in Sources */,
+				F10 /* User.swift in Sources */,
+				F11 /* Item.swift in Sources */,
+				F12 /* Organization.swift in Sources */,
+				F13 /* MoveoutList.swift in Sources */,
+				F14 /* ICADelivery.swift in Sources */,
+				F15 /* CalendarEvent.swift in Sources */,
+				F16 /* ActivityLog.swift in Sources */,
+				F17 /* Notification.swift in Sources */,
+				F20 /* Extensions.swift in Sources */,
+				F21 /* Constants.swift in Sources */,
+				F22 /* KeychainManager.swift in Sources */,
+				F30 /* NetworkManager.swift in Sources */,
+				F31 /* AuthService.swift in Sources */,
+				F32 /* InventoryService.swift in Sources */,
+				F33 /* UserService.swift in Sources */,
+				F34 /* OrganizationService.swift in Sources */,
+				F35 /* MoveoutListService.swift in Sources */,
+				F36 /* ICADeliveryService.swift in Sources */,
+				F40 /* AuthViewModel.swift in Sources */,
+				F41 /* DashboardViewModel.swift in Sources */,
+				F42 /* InventoryViewModel.swift in Sources */,
+				F43 /* NavigationManager.swift in Sources */,
+				F50 /* SplashView.swift in Sources */,
+				F51 /* SignInView.swift in Sources */,
+				F52 /* SignUpView.swift in Sources */,
+				F53 /* PendingAccessView.swift in Sources */,
+				F54 /* MainTabView.swift in Sources */,
+				F55 /* DashboardView.swift in Sources */,
+				F56 /* StockOutView.swift in Sources */,
+				F57 /* StockInView.swift in Sources */,
+				F58 /* RecordStockInView.swift in Sources */,
+				F59 /* MoveoutListView.swift in Sources */,
+				F60 /* MoreMenuView.swift in Sources */,
+				F61 /* AdditionalViews.swift in Sources */,
+				F62 /* ManagementViews.swift in Sources */,
+				F63 /* CommonComponents.swift in Sources */,
+				F64 /* ItemComponents.swift in Sources */,
+				F65 /* ICADeliveryViews.swift in Sources */,
+				F66 /* CalendarViews.swift in Sources */,
+				F67 /* ReportsView.swift in Sources */,
+				F68 /* SettingsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		C01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StockNexus/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stocknexus.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StockNexus/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.stocknexus.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BC01 /* Build configuration list for PBXNativeTarget "StockNexus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C03 /* Debug */,
+				C04 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BC02 /* Build configuration list for PBXProject "StockNexus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C01 /* Debug */,
+				C02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = PR01 /* Project object */;
+}
